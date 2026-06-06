@@ -94,8 +94,26 @@ async function calculateDate() {
         });
         const data = await response.json();
         if (data.success) {
-            document.getElementById('calculatedDate').value = data.calculated_date || '计算中...';
-            pendingRowIndex = data.row_index || 0; // 保存行号供正式提交使用
+            const calcDate = data.calculated_date || '';
+            document.getElementById('calculatedDate').value = calcDate || '计算中...';
+            pendingRowIndex = data.row_index || 0;
+            
+            // 检查E列结果是否为有效日期
+            const isDate = calcDate && calcDate.match(/\d{4}-\d{2}-\d{2}/);
+            const queueDateInput = document.getElementById('queueDate');
+            if (!isDate && calcDate) {
+                // 不是日期（如"请联系商务支持"），禁用F列
+                queueDateInput.value = '请联系商务支持';
+                queueDateInput.disabled = true;
+                queueDateInput.style.background = '#f8f9fa';
+                queueDateInput.style.color = '#e74c3c';
+            } else {
+                // 是有效日期，恢复F列
+                queueDateInput.disabled = false;
+                queueDateInput.style.background = '';
+                queueDateInput.style.color = '';
+            }
+            
             showToast('可发货日期已更新' + (pendingRowIndex ? ' (行号:' + pendingRowIndex + ')' : ''), 'success');
         } else {
             showToast('计算失败: ' + data.error, 'error');
@@ -113,8 +131,16 @@ async function calculateDate() {
 async function handleCreateOrder(e) {
     e.preventDefault();
     
+    const queueDateInput = document.getElementById('queueDate');
+    
+    // 如果F列被禁用（E列不是有效日期），阻止提交
+    if (queueDateInput.disabled) {
+        showToast('可发货日期不是有效日期，请联系商务支持后再提交', 'error');
+        return;
+    }
+    
     const calculatedDate = document.getElementById('calculatedDate').value;
-    const queueDate = document.getElementById('queueDate').value;
+    const queueDate = queueDateInput.value;
     
     // 校验：F列（排队日期）必须 >= E列（可发货日期）
     if (calculatedDate && calculatedDate !== '计算中...' && queueDate) {
