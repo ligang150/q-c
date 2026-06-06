@@ -228,10 +228,23 @@ def calculate_date():
         tonnage = data.get('tonnage', '')
         customer = data.get('customer', '')
         expected_date = data.get('expected_date', '')
+        pending_row_index = data.get('pending_row_index', 0)  # 前端已有的待提交行号
 
-        # 1. 先检查是否已有匹配的待提交行（A列型号匹配且F列为空）
-        # 分批读取，避免RangeSize过大
+        # 1. 优先复用前端传来的待提交行（用户修改型号等字段时复用同一行）
         existing_row = 0  # 1-based
+
+        if pending_row_index > 0:
+            # 检查该行是否仍然是待提交状态（F列为空）
+            check_data = read_sheet_range(SHEET_ID, f"A{pending_row_index}:F{pending_row_index}")
+            check_rows = check_data.get("rows", [])
+            if check_rows:
+                check_values = [parse_cell_value(v.get("cellValue")) for v in check_rows[0].get("values", [])]
+                f_val = check_values[5] if len(check_values) > 5 else ""
+                if not f_val.strip():
+                    existing_row = pending_row_index
+
+        # 2. 如果前端没有待提交行，再按型号查找
+        if existing_row == 0:
         batch_size = 50
         for offset in range(0, 200, batch_size):
             start = offset + 1
