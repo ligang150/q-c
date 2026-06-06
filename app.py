@@ -245,34 +245,34 @@ def calculate_date():
 
         # 2. 如果前端没有待提交行，再按型号查找
         if existing_row == 0:
-        batch_size = 50
-        for offset in range(0, 200, batch_size):
-            start = offset + 1
-            end = offset + batch_size
-            range_str = f"A{start}:F{end}"
-            grid_data = read_sheet_range(SHEET_ID, range_str)
-            rows = grid_data.get("rows", [])
+            batch_size = 50
+            for offset in range(0, 200, batch_size):
+                start = offset + 1
+                end = offset + batch_size
+                range_str = f"A{start}:F{end}"
+                grid_data = read_sheet_range(SHEET_ID, range_str)
+                rows = grid_data.get("rows", [])
 
-            for i in range(len(rows)):
-                row = rows[i]
-                actual_row = start + i  # 1-based
-                if actual_row < 3:
-                    continue  # 跳过表头
-                values = row.get("values", [])
-                row_data = [parse_cell_value(v.get("cellValue")) for v in values]
+                for i in range(len(rows)):
+                    row = rows[i]
+                    actual_row = start + i  # 1-based
+                    if actual_row < 3:
+                        continue  # 跳过表头
+                    values = row.get("values", [])
+                    row_data = [parse_cell_value(v.get("cellValue")) for v in values]
 
-                # 检查A列型号匹配
-                a_val = row_data[0] if len(row_data) > 0 else ""
-                f_val = row_data[5] if len(row_data) > 5 else ""  # F列排队日期
+                    # 检查A列型号匹配
+                    a_val = row_data[0] if len(row_data) > 0 else ""
+                    f_val = row_data[5] if len(row_data) > 5 else ""  # F列排队日期
 
-                if a_val == model and not f_val.strip():
-                    existing_row = actual_row
+                    if a_val == model and not f_val.strip():
+                        existing_row = actual_row
+                        break
+
+                if existing_row > 0:
                     break
-
-            if existing_row > 0:
-                break
-            if len(rows) < batch_size:
-                break
+                if len(rows) < batch_size:
+                    break
 
         if existing_row > 0:
             # 复用已有行：更新A-D列数据（跳过E列）
