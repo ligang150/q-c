@@ -52,15 +52,18 @@ def parse_cell_value(cell_value):
 
 def build_cell_value(value, is_date=False):
     """构建单元格写入值"""
-    if is_date and value:
+    if not value or str(value).strip() == "":
+        return {"cellValue": {"text": ""}}
+    if is_date:
         try:
-            parts = value.split("-")
-            return {"cellValue": {"time": {
-                "year": int(parts[0]), "month": int(parts[1]), "day": int(parts[2])
-            }}}
+            parts = str(value).split("-")
+            if len(parts) == 3 and len(parts[0]) == 4:
+                return {"cellValue": {"time": {
+                    "year": int(parts[0]), "month": int(parts[1]), "day": int(parts[2])
+                }}}
         except:
             pass
-    return {"cellValue": {"text": str(value) if value else ""}}
+    return {"cellValue": {"text": str(value)}}
 
 
 def read_sheet_range(sheet_id, range_str):
@@ -378,19 +381,30 @@ def get_orders():
                 continue  # 跳过表头
 
             values = row.get("values", [])
-            if len(values) < 6:
+            if not values:
                 continue
 
-            # 解析各列
-            row_data = [parse_cell_value(v.get("cellValue")) for v in values]
+            # 解析各列（按索引取值，空列可能不存在）
+            def get_col(idx):
+                if idx < len(values):
+                    cv = values[idx].get("cellValue")
+                    if cv:
+                        return parse_cell_value(cv)
+                return ""
 
-            # 检查权限
-            row_submitter_id = row_data[10] if len(row_data) > 10 else ""
-            if submitter_id and row_submitter_id != submitter_id:
+            row_data = [get_col(j) for j in range(12)]
+
+            # 至少A列有数据才显示
+            if not row_data[0]:
+                continue
+
+            # 检查权限（只过滤有submitter_id的行，空行不过滤）
+            row_submitter_id = row_data[10]
+            if submitter_id and row_submitter_id and row_submitter_id != submitter_id:
                 continue
 
             # 检查排队日期是否过期
-            queue_date_str = row_data[5] if len(row_data) > 5 else ""
+            queue_date_str = row_data[5]
             if queue_date_str:
                 try:
                     queue_date = datetime.strptime(queue_date_str, "%Y-%m-%d").date()
@@ -399,24 +413,20 @@ def get_orders():
                 except:
                     pass
 
-            # 至少有一个有效字段才显示
-            if not any(row_data[:6]):
-                continue
-
             order = {
                 "row_index": i + 1,  # 1-based
-                "model": row_data[0] if len(row_data) > 0 else "",
-                "tonnage": row_data[1] if len(row_data) > 1 else "",
-                "customer": row_data[2] if len(row_data) > 2 else "",
-                "expected_date": row_data[3] if len(row_data) > 3 else "",
-                "calculated_date": row_data[4] if len(row_data) > 4 else "",
-                "queue_date": row_data[5] if len(row_data) > 5 else "",
-                "submitter": row_data[6] if len(row_data) > 6 else "",
-                "remark": row_data[7] if len(row_data) > 7 else "",
-                "serial_no": row_data[8] if len(row_data) > 8 else "",
-                "last_entry": row_data[9] if len(row_data) > 9 else "",
+                "model": row_data[0],
+                "tonnage": row_data[1],
+                "customer": row_data[2],
+                "expected_date": row_data[3],
+                "calculated_date": row_data[4],
+                "queue_date": row_data[5],
+                "submitter": row_data[6],
+                "remark": row_data[7],
+                "serial_no": row_data[8],
+                "last_entry": row_data[9],
                 "submitter_id": row_submitter_id,
-                "submit_time": row_data[11] if len(row_data) > 11 else ""
+                "submit_time": row_data[11]
             }
             orders.append(order)
 
