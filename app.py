@@ -69,11 +69,15 @@ def build_cell_value(value, is_date=False):
 def read_sheet_range(sheet_id, range_str):
     """读取表格范围数据，返回gridData"""
     url = f"{BASE_URL}/files/{FILE_ID}/{sheet_id}/{range_str}"
-    resp = requests.get(url, headers=get_headers())
+    resp = requests.get(url, headers=get_headers(), timeout=30)
     if resp.status_code == 200:
         data = resp.json()
-        return data.get("gridData", {})
-    return {}
+        result = data.get("gridData", {})
+        if not result:
+            # 返回原始响应的keys用于debug
+            result["_debug"] = {"keys": list(data.keys()), "raw_preview": str(data)[:500]}
+        return result
+    return {"_debug": {"status": resp.status_code, "error": resp.text[:200]}}
 
 
 def get_next_empty_row(sheet_id):
