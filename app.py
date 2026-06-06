@@ -373,6 +373,14 @@ def get_orders():
 
         grid_data = read_sheet_range(SHEET_ID, "A1:L1000")
         rows = grid_data.get("rows", [])
+        
+        # debug info
+        debug_info = {
+            "grid_data_keys": list(grid_data.keys()) if grid_data else "empty",
+            "total_rows": len(rows),
+            "first_row_values": len(rows[0].get("values", [])) if rows else 0
+        }
+        
         orders = []
         today = datetime.now().date()
 
@@ -430,9 +438,9 @@ def get_orders():
             }
             orders.append(order)
 
-        return jsonify({"success": True, "orders": orders, "debug_total_rows": len(rows), "debug_scanned": sum(1 for r in rows[1:] if r.get("values"))})
+        return jsonify({"success": True, "orders": orders, "debug": debug_info})
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({"success": False, "error": str(e), "traceback": str(e.__traceback__)})
 
 
 @app.route('/api/orders/<int:row_index>', methods=['PUT'])
