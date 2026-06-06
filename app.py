@@ -73,22 +73,27 @@ def read_sheet_range(sheet_id, range_str):
     return {}
 
 
-def get_row_count(sheet_id):
-    """获取表格有效数据行数（基于A列型号列判断）"""
-    grid_data = read_sheet_range(sheet_id, "A1:A1000")
+def get_next_empty_row(sheet_id):
+    """获取表格下一个空行号（1-based），从第3行开始扫描（跳过表头第1-2行）"""
+    # 读取前200行A列数据
+    grid_data = read_sheet_range(sheet_id, "A1:A200")
     rows = grid_data.get("rows", [])
-    last_row = 0
-    for i, row in enumerate(rows):
-        if i == 0:
-            continue  # 跳过表头
+    
+    for i in range(2, len(rows)):  # 从第3行开始（0-based index 2）
+        row = rows[i]
+        has_data = False
         for v in row.get("values", []):
             cv = v.get("cellValue")
             if cv:
                 text = parse_cell_value(cv)
-                if text:
-                    last_row = i + 1
+                if text.strip():
+                    has_data = True
                     break
-    return last_row
+        if not has_data:
+            return i + 1  # 返回1-based行号
+    
+    # 如果前200行都满了，返回第201行
+    return len(rows) + 1 if len(rows) >= 2 else 3
 
 
 def batch_update(requests_body):
@@ -99,33 +104,51 @@ def batch_update(requests_body):
 
 
 def write_order_row(row_index_0based, model, tonnage, customer, expected_date, queue_date, submitter, remark, serial_no, submitter_id, submit_time):
-    """写入一行订单数据到腾讯表格（row_index_0based从0开始）"""
-    values = [
-        build_cell_value(model),
-        build_cell_value(tonnage),
-        build_cell_value(customer),
-        build_cell_value(expected_date, is_date=True),
-        build_cell_value(""),  # E列可发货日期 - 有公式保护，留空
-        build_cell_value(queue_date, is_date=True),
-        build_cell_value(submitter),
-        build_cell_value(remark),
-        build_cell_value(serial_no),
-        build_cell_value(""),  # 上次录入
-        build_cell_value(submitter_id),
-        build_cell_value(submit_time),
+    """写入一行订单数据到腾讯表格（row_index_0based从0开始）
+    注意：E列（可发货日期）有公式保护，完全不写入，避免覆盖公式结果
+    """
+    # A-D列 (0-3)
+    values_left = [
+        build_cell_value(model),           # A: 型号
+        build_cell_value(tonnage),         # B: 吨位
+        build_cell_value(customer),        # C: 客户
+        build_cell_value(expected_date, is_date=True),  # D: 期望发货日期
+    ]
+    # F-L列 (5-11) - 跳过E列
+    values_right = [
+        build_cell_value(queue_date, is_date=True),     # F: 输入发货日期排队
+        build_cell_value(submitter),       # G: 提交人
+        build_cell_value(remark),          # H: 备注
+        build_cell_value(serial_no),       # I: 序号
+        build_cell_value(""),              # J: 上次录入
+        build_cell_value(submitter_id),    # K: 提交人ID
+        build_cell_value(submit_time),     # L: 提交时间
     ]
 
+    # 分两次写入：先写A-D，再写F-L
     body = {
-        "requests": [{
-            "updateRangeRequest": {
-                "sheetId": SHEET_ID,
-                "gridData": {
-                    "startRow": row_index_0based,
-                    "startColumn": 0,
-                    "rows": [{"values": values}]
+        "requests": [
+            {
+                "updateRangeRequest": {
+                    "sheetId": SHEET_ID,
+                    "gridData": {
+                        "startRow": row_index_0based,
+                        "startColumn": 0,
+                        "rows": [{"values": values_left}]
+                    }
+                }
+            },
+            {
+                "updateRangeRequest": {
+                    "sheetId": SHEET_ID,
+                    "gridData": {
+                        "startRow": row_index_0based,
+                        "startColumn": 5,
+                        "rows": [{"values": values_right}]
+                    }
                 }
             }
-        }]
+        ]
     }
     return batch_update(body)
 
@@ -173,7 +196,7 @@ def get_models():
 
 @app.route('/api/calculate-date', methods=['POST'])
 def calculate_date():
-    """计算可发货日期：先写入数据到表格末尾（让E列公式自动计算），然后读取结果"""
+    """计算可发货日期：找到第一个空行，写入数据（跳过E列），让E列公式自动计算，然后读取结果"""
     try:
         data = request.json
         model = data.get('model', '')
@@ -181,12 +204,12 @@ def calculate_date():
         customer = data.get('customer', '')
         expected_date = data.get('expected_date', '')
 
-        # 获取当前最后一行（已有数据的最后一行）
-        last_row = get_row_count(SHEET_ID)
-        write_row_idx = last_row  # 0-based，写在最后一行之后（新行）
-        serial_no = write_row_idx
+        # 找到第一个空行（1-based）
+        empty_row = get_next_empty_row(SHEET_ID)
+        write_row_idx = empty_row - 1  # 转为0-based
+        serial_no = empty_row - 1
 
-        # 写入数据到表格末尾（让E列公式自动计算）
+        # 写入数据到空行（跳过E列，不覆盖公式）
         # 排队日期、提交人等先留空，等用户正式提交时再更新
         remark = f"{tonnage}{customer}"
         resp = write_order_row(
@@ -203,7 +226,7 @@ def calculate_date():
         time.sleep(2)
 
         # 读取E列计算结果
-        grid_data = read_sheet_range(SHEET_ID, f"E{write_row_idx + 1}:E{write_row_idx + 1}")
+        grid_data = read_sheet_range(SHEET_ID, f"E{empty_row}:E{empty_row}")
         rows = grid_data.get("rows", [])
         calculated_date = ""
         if rows:
@@ -216,7 +239,7 @@ def calculate_date():
         return jsonify({
             "success": True,
             "calculated_date": calculated_date,
-            "row_index": write_row_idx + 1  # 1-based行号，供正式提交时更新
+            "row_index": empty_row  # 1-based行号，供正式提交时更新
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -252,9 +275,9 @@ def create_order():
                     if cv:
                         serial_no = parse_cell_value(cv) or str(write_row_idx)
         else:
-            # 新建行
-            last_row = get_row_count(SHEET_ID)
-            write_row_idx = last_row
+            # 新建行：找到第一个空行
+            empty_row = get_next_empty_row(SHEET_ID)
+            write_row_idx = empty_row - 1
             serial_no = str(write_row_idx)
 
         resp = write_order_row(
