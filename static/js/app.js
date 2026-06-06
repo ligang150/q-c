@@ -142,29 +142,34 @@ async function calculateDate() {
 async function handleCreateOrder(e) {
     e.preventDefault();
     
+    const calculatedDate = document.getElementById('calculatedDate').value;
     const queueDateInput = document.getElementById('queueDate');
     
-    // 如果F列被禁用（E列不是有效日期），阻止提交
-    if (queueDateInput.disabled) {
-        showToast('可发货日期不是有效日期，请联系商务支持后再提交', 'error');
-        return;
+    // 确定queue_date的值
+    let queueDate = '';
+    const isCalcDate = calculatedDate && calculatedDate.match(/\d{4}-\d{2}-\d{2}/);
+    
+    if (!isCalcDate && calculatedDate && calculatedDate !== '计算中...') {
+        // E列不是有效日期（如"请联系商务支持"），F列也写入相同文本
+        queueDate = calculatedDate;
+    } else {
+        // E列是有效日期，使用F列输入框的值
+        queueDate = queueDateInput.value;
     }
     
-    const calculatedDate = document.getElementById('calculatedDate').value;
-    const queueDate = queueDateInput.value;
-    
     // 校验：F列（排队日期）必须 >= E列（可发货日期）
-    if (calculatedDate && calculatedDate !== '计算中...' && queueDate) {
-        // 尝试解析可发货日期（可能是日期格式或文本如"请联系商务支持"）
-        const calcParts = calculatedDate.match(/(\d{4})-(\d{2})-(\d{2})/);
-        if (calcParts) {
-            const calcDateObj = new Date(calcParts[1], parseInt(calcParts[2]) - 1, calcParts[3]);
-            const queueDateObj = new Date(queueDate);
-            if (queueDateObj < calcDateObj) {
-                showToast('排队日期不能早于可发货日期（' + calculatedDate + '）', 'error');
-                return;
-            }
+    if (isCalcDate && queueDate) {
+        const calcDateObj = new Date(calculatedDate);
+        const queueDateObj = new Date(queueDate);
+        if (queueDateObj < calcDateObj) {
+            showToast('排队日期不能早于可发货日期（' + calculatedDate + '）', 'error');
+            return;
         }
+    }
+    
+    if (!queueDate) {
+        showToast('请填写排队日期', 'error');
+        return;
     }
     
     const orderData = {
