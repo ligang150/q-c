@@ -1,58 +1,67 @@
-let currentUser = { name: '测试用户', id: 'test_user_001' };
+let currentUser = { name: '用户', id: 'auth_user' };
 let allOrders = [];
 let modelOptions = [];
-let pendingRowIndex = 0; // 由calculate_date返回的row_index
+let pendingRowIndex = 0;
 const API_BASE = '';
 
 document.addEventListener('DOMContentLoaded', function() {
-    // 检查URL参数中是否有授权错误
-    const urlParams = new URLSearchParams(window.location.search);
-    const authError = urlParams.get('auth_error');
-    const nick = urlParams.get('nick');
-    const openId = urlParams.get('open_id');
-
-    if (authError) {
-        showAuthOverlay('授权失败，请重试');
-        return;
-    }
-
-    // 检查是否已授权（通过后端session）
+    // 检查是否已授权
     fetch(`${API_BASE}/auth/check`, { credentials: 'include' })
         .then(r => r.json())
         .then(data => {
             if (data.authorized) {
                 hideAuthOverlay();
-                initUser(data.nick, data.open_id);
-                loadModels();
-                setupEventListeners();
-                setupEditQueueDateListener();
-                const today = new Date().toISOString().split('T')[0];
-                document.getElementById('expectedDate').value = today;
-                document.getElementById('queueDate').value = today;
+                initApp();
             } else {
                 showAuthOverlay();
             }
         })
-        .catch(() => {
-            showAuthOverlay('网络错误，请重试');
-        });
+        .catch(() => showAuthOverlay('网络错误，请重试'));
 });
 
 function showAuthOverlay(errorMsg) {
     document.getElementById('authOverlay').style.display = 'flex';
-    if (errorMsg) {
-        document.getElementById('authError').textContent = errorMsg;
-    }
+    if (errorMsg) document.getElementById('authError').textContent = errorMsg;
 }
 
 function hideAuthOverlay() {
     document.getElementById('authOverlay').style.display = 'none';
 }
 
-function initUser(nick, openId) {
-    currentUser.name = nick || '用户';
-    currentUser.id = openId || 'unknown';
+function doAuth() {
+    const password = document.getElementById('authPassword').value.trim();
+    if (!password) {
+        document.getElementById('authError').textContent = '请输入密码';
+        return;
+    }
+    fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+        credentials: 'include'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            hideAuthOverlay();
+            initApp();
+        } else {
+            document.getElementById('authError').textContent = data.error || '密码错误';
+        }
+    })
+    .catch(() => {
+        document.getElementById('authError').textContent = '网络错误';
+    });
+}
+
+function initApp() {
     document.getElementById('userName').textContent = currentUser.name;
+    loadModels();
+    setupEventListeners();
+    setupEditQueueDateListener();
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('expectedDate').value = today;
+    document.getElementById('queueDate').value = today;
 }
 
 function initUser() {

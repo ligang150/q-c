@@ -11,9 +11,12 @@
         <div class="auth-box">
             <div class="auth-icon">🔒</div>
             <h2>需要授权访问</h2>
-            <p>本系统仅限腾讯表格授权用户使用</p>
-            <p class="auth-hint">请点击下方按钮，使用微信扫码授权登录</p>
-            <a href="/auth/login" class="auth-btn">微信扫码授权登录</a>
+            <p>本系统仅限授权用户使用</p>
+            <p class="auth-hint">请输入访问密码</p>
+            <div class="auth-form">
+                <input type="password" id="authPassword" placeholder="请输入访问密码" onkeydown="if(event.key==='Enter')doAuth()">
+                <button onclick="doAuth()">登 录</button>
+            </div>
             <p class="auth-error" id="authError"></p>
         </div>
     </div>
