@@ -100,7 +100,7 @@ function initUser() {
 
 async function loadModels() {
     try {
-        const response = await fetch(`${API_BASE}/api/models`);
+        const response = await apiFetch(`${API_BASE}/api/models`);
         const data = await response.json();
         if (data.success) {
             modelOptions = data.models;
@@ -168,7 +168,7 @@ async function calculateDate() {
     document.getElementById('calculatedDate').value = '计算中...';
 
     try {
-        const response = await fetch(`${API_BASE}/api/calculate-date`, {
+        const response = await apiFetch(`${API_BASE}/api/calculate-date`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model, tonnage, customer, expected_date: expectedDate, pending_row_index: pendingRowIndex, submitter_id: currentUser.id })
@@ -265,7 +265,7 @@ async function handleCreateOrder(e) {
     };
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders`, {
+        const response = await apiFetch(`${API_BASE}/api/orders`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(orderData)
@@ -292,7 +292,7 @@ async function loadOrders() {
     ordersList.innerHTML = '<div class="loading">加载中...</div>';
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}`);
+        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}`);
         const data = await response.json();
         if (data.success) {
             allOrders = data.orders;
@@ -385,7 +385,7 @@ function sortOrders() {
 
 async function openEditModal(rowIndex) {
     try {
-        const response = await fetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}`);
+        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}`);
         const data = await response.json();
         if (data.success) {
             const order = data.orders.find(o => o.row_index === rowIndex);
@@ -424,7 +424,7 @@ async function calculateDateForEdit() {
     const rowIndex = parseInt(document.getElementById('editRowIndex').value) || 0;
 
     try {
-        const response = await fetch(`${API_BASE}/api/calculate-date`, {
+        const response = await apiFetch(`${API_BASE}/api/calculate-date`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model, tonnage, customer, expected_date: expectedDate, pending_row_index: rowIndex })
@@ -494,7 +494,7 @@ async function handleUpdateOrder(e) {
     };
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders/${rowIndex}`, {
+        const response = await apiFetch(`${API_BASE}/api/orders/${rowIndex}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(orderData)
@@ -515,7 +515,7 @@ async function handleUpdateOrder(e) {
 async function deleteOrder(rowIndex) {
     if (!confirm('确定要删除这个订单吗？')) return;
     try {
-        const response = await fetch(`${API_BASE}/api/orders/${rowIndex}`, { method: 'DELETE' });
+        const response = await apiFetch(`${API_BASE}/api/orders/${rowIndex}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             showToast('订单删除成功！', 'success');
