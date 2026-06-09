@@ -516,10 +516,12 @@ body {
 
 .feedback-item {
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: baseline;
     padding: 10px 0;
     border-bottom: 1px solid #eee;
+    gap: 16px;
 }
 
 .feedback-item:last-child {
@@ -529,12 +531,15 @@ body {
 .feedback-label {
     color: #888;
     font-size: 14px;
-    margin-bottom: 4px;
+    width: 48px;
+    text-align: justify;
+    text-align-last: justify;
+    flex-shrink: 0;
 }
 
 .feedback-value {
     color: #333;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 500;
 }
 
