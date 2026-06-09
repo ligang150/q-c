@@ -108,9 +108,7 @@ const IDLE_TIMEOUT = 10 * 60 * 1000; // 10分钟无操作强制退出
 function initApp() {
     document.getElementById('userName').textContent = currentUser.name;
     loadModels();
-    setupEventListeners();
-    setupEditQueueDateListener();
-    // 刷新页面时强制清除所有表单数据（防止浏览器autofill恢复）
+    // 先清空所有字段（在绑定事件之前，避免触发计算）
     document.getElementById('model').value = '';
     document.getElementById('tonnage').value = '';
     document.getElementById('customer').value = '';
@@ -122,6 +120,9 @@ function initApp() {
     const tomorrowStr = tomorrow.toISOString().split('T')[0];
     document.getElementById('expectedDate').value = tomorrowStr;
     document.getElementById('queueDate').value = tomorrowStr;
+    // 绑定事件监听器
+    setupEventListeners();
+    setupEditQueueDateListener();
     // 启动无操作检测
     startIdleTimer();
 }
@@ -210,12 +211,21 @@ function debounce(func, wait) {
     };
 }
 
+// 防止 calculateDate 并发执行
+let isCalculating = false;
+
 async function calculateDate() {
+    if (isCalculating) return;
+    isCalculating = true;
+    
     const model = document.getElementById('model').value;
     const tonnage = document.getElementById('tonnage').value;
     const customer = document.getElementById('customer').value;
     const expectedDate = document.getElementById('expectedDate').value;
-    if (!model || !tonnage || !customer || !expectedDate) return;
+    if (!model || !tonnage || !customer || !expectedDate) {
+        isCalculating = false;
+        return;
+    }
 
     document.getElementById('calculatedDate').value = '计算中...';
 
@@ -269,6 +279,8 @@ async function calculateDate() {
     } catch (error) {
         document.getElementById('calculatedDate').value = '计算失败';
         pendingRowIndex = 0;
+    } finally {
+        isCalculating = false;
     }
 }
 
