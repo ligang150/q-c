@@ -583,6 +583,14 @@ async function handleChangePassword(e) {
         showToast('两次输入的新密码不一致', 'error');
         return;
     }
+    if (newPassword.length < 6) {
+        showToast('新密码至少6位', 'error');
+        return;
+    }
+    if (!/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+        showToast('密码必须同时包含字母和数字', 'error');
+        return;
+    }
 
     try {
         const response = await apiFetch(`${API_BASE}/api/users/password`, {

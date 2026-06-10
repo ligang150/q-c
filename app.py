@@ -671,6 +671,12 @@ def update_password():
         if not employee_id or not old_password or not new_password:
             return jsonify({"success": False, "error": "参数不完整"})
 
+        if len(new_password) < 6:
+            return jsonify({"success": False, "error": "新密码至少6位"})
+
+        if not (any(c.isalpha() for c in new_password) and any(c.isdigit() for c in new_password)):
+            return jsonify({"success": False, "error": "密码必须同时包含字母和数字"})
+
         # 读取用户表找到对应行
         url = f"{BASE_URL}/files/{USER_FILE_ID}/{USER_SHEET_ID}/A2:C30"
         resp = requests.get(url, headers=get_headers(), timeout=30)
