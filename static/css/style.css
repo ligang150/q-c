@@ -524,8 +524,12 @@ body {
 }
 
 .feedback-icon {
-    font-size: 56px;
     margin-bottom: 16px;
+}
+
+.feedback-phone-icon {
+    color: #e74c3c;
+    stroke: #e74c3c;
 }
 
 .feedback-card h2 {

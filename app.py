@@ -380,11 +380,28 @@ def calculate_date():
             # 新建行
             empty_row = get_next_empty_row(SHEET_ID)
             write_row_idx = empty_row - 1
-            serial_no = write_row_idx
             remark = f"{tonnage}{customer}"
+            # 扫描I列已有数据，找到最大序号+1
+            max_serial = 0
+            batch_size = 50
+            for offset in range(0, 200, batch_size):
+                start = offset + 1
+                end = offset + batch_size
+                i_data = read_sheet_range(SHEET_ID, f"I{start}:I{end}")
+                i_rows = i_data.get("rows", [])
+                for row in i_rows:
+                    for v in row.get("values", []):
+                        cv = v.get("cellValue")
+                        if cv:
+                            val = parse_cell_value(cv)
+                            if val and str(val).isdigit():
+                                max_serial = max(max_serial, int(val))
+                if len(i_rows) < batch_size:
+                    break
+            serial_no = str(max_serial + 1)
             resp = write_order_row(
                 write_row_idx, model, tonnage, customer, expected_date,
-                "", "", remark, str(serial_no), "", ""
+                "", "", remark, serial_no, "", ""
             )
             target_row = empty_row
 
