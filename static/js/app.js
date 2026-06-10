@@ -143,6 +143,7 @@ const IDLE_TIMEOUT = 10 * 60 * 1000; // 10分钟无操作强制退出
 function initApp() {
     document.getElementById('userName').textContent = currentUser.name;
     document.getElementById('changePwdBtn').style.display = 'inline-block';
+    document.getElementById('logoutBtn').style.display = 'inline-block';
     loadModels();
     // 先清空所有字段（在绑定事件之前，避免触发计算）
     document.getElementById('model').value = '';
@@ -605,6 +606,18 @@ async function handleChangePassword(e) {
     } catch (error) {
         showToast('网络错误', 'error');
     }
+}
+
+function doLogout() {
+    accessPassword = '';
+    employeeId = '';
+    localStorage.removeItem('accessPassword');
+    localStorage.removeItem('employeeId');
+    currentUser = { name: '用户', id: '' };
+    document.getElementById('changePwdBtn').style.display = 'none';
+    document.getElementById('logoutBtn').style.display = 'none';
+    document.getElementById('userName').textContent = '未登录';
+    showAuthOverlay();
 }
 
 async function calculateDateForEdit() {

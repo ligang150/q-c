@@ -260,6 +260,23 @@ body {
     min-height: 18px;
 }
 
+.btn-change-pwd,
+.btn-logout {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-left: 8px;
+}
+
+.btn-logout {
+    background: rgba(255,100,100,0.3);
+    border-color: rgba(255,100,100,0.5);
+}
+
 .form-actions {
     display: flex;
     gap: 12px;
