@@ -215,6 +215,15 @@ function setupEventListeners() {
             field.addEventListener('change', saveDraft);
         }
     });
+    // 日期选择器：点击日期后自动关闭（通过blur实现）
+    ['expectedDate', 'queueDate', 'editExpectedDate', 'editQueueDate'].forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('change', function() {
+                this.blur();
+            });
+        }
+    });
     // 监听用户操作，记录活动时间
     ['click', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
         document.addEventListener(evt, recordActivity, { passive: true });
