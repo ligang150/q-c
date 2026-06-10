@@ -219,7 +219,7 @@ function setupEventListeners() {
     ['expectedDate', 'queueDate', 'editExpectedDate', 'editQueueDate'].forEach(fieldId => {
         const field = document.getElementById(fieldId);
         if (field) {
-            field.addEventListener('change', function() {
+            field.addEventListener('input', function() {
                 this.blur();
             });
         }
