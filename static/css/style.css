@@ -378,6 +378,36 @@ body {
     white-space: nowrap;
 }
 
+/* 管理员筛选样式 */
+.admin-filter-container {
+    padding: 10px 20px 0;
+}
+
+.admin-filter {
+    display: flex;
+    gap: 10px;
+}
+
+.admin-filter button {
+    padding: 8px 16px;
+    border: 1px solid #667eea;
+    background: #fff;
+    color: #667eea;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.admin-filter button:hover {
+    background: #f0f2ff;
+}
+
+.admin-filter button.active {
+    background: #667eea;
+    color: #fff;
+}
+
 /* 分页样式 */
 .pagination-container {
     padding: 15px 20px;

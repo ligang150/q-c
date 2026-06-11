@@ -183,9 +183,9 @@ def read_sheet_range(sheet_id, range_str):
 
 def get_next_empty_row(sheet_id):
     """获取表格下一个空行号（1-based），从第3行开始扫描（跳过表头第1-2行）"""
-    # 分批读取，每批50行
-    batch_size = 50
-    for offset in range(0, 1000, batch_size):
+    # 分批读取，每批100行，优化速度
+    batch_size = 100
+    for offset in range(0, 2000, batch_size):
         start = offset + 1  # 1-based
         end = offset + batch_size
         range_str = f"A{start}:A{end}"
@@ -208,7 +208,7 @@ def get_next_empty_row(sheet_id):
             if not has_data:
                 return actual_row
     
-    return 201  # 如果前200行都满了
+    return 2001  # 如果前2000行都满了
 
 
 def batch_update(requests_body):
@@ -422,10 +422,13 @@ def create_order():
 @app.route('/api/orders', methods=['GET'])
 @require_auth
 def get_orders():
-    """获取订单列表：管理员可查看所有，其他人只能看自己的；仅显示期望发货日期>=今天的订单；支持分页"""
+    """获取订单列表：管理员可查看所有或仅自己的；仅显示期望发货日期>=今天的订单；支持分页"""
     try:
         submitter_id = request.args.get('submitter_id', '')
         is_admin = is_user_admin(submitter_id)
+        
+        # 管理员筛选参数：mine=只看自己的，all=看全部
+        view_mode = request.args.get('view_mode', 'mine' if not is_admin else 'all')
         
         # 分页参数
         page = request.args.get('page', 1, type=int)
@@ -437,10 +440,10 @@ def get_orders():
         if per_page > 100:
             per_page = 100
 
-        # 分批读取表格数据，每批50行，避免RangeSize过大导致400001错误
+        # 分批读取表格数据，每批100行，优化读取速度
         all_rows = []
-        batch_size = 50
-        for offset in range(0, 1000, batch_size):
+        batch_size = 100
+        for offset in range(0, 2000, batch_size):
             start = offset + 1
             end = offset + batch_size
             range_str = f"A{start}:L{end}"
@@ -476,12 +479,18 @@ def get_orders():
             if not row_data[0]:
                 continue
 
-            # 检查权限：非管理员只能看自己的订单，管理员可以看所有
+            # 检查权限
             row_submitter_id = row_data[10]
-            if not is_admin and submitter_id and row_submitter_id and row_submitter_id != submitter_id:
-                continue
+            if not is_admin:
+                # 非管理员只能看自己的
+                if submitter_id and row_submitter_id and row_submitter_id != submitter_id:
+                    continue
+            else:
+                # 管理员根据view_mode筛选
+                if view_mode == 'mine' and submitter_id and row_submitter_id and row_submitter_id != submitter_id:
+                    continue
 
-            # 检查期望发货日期是否大于等于今天
+            # 检查期望发货日期是否大于等于今天（>=今天）
             expected_date_str = row_data[3]
             if expected_date_str:
                 try:
@@ -517,6 +526,8 @@ def get_orders():
         return jsonify({
             "success": True, 
             "orders": paginated_orders,
+            "is_admin": is_admin,
+            "view_mode": view_mode,
             "pagination": {
                 "page": page,
                 "per_page": per_page,

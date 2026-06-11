@@ -4,6 +4,8 @@ let modelOptions = [];
 let pendingRowIndex = 0;
 let currentPage = 1;
 let totalPages = 1;
+let isAdmin = false;
+let viewMode = 'mine'; // 'mine' 或 'all'
 const API_BASE = '';
 const PER_PAGE = 20;
 
@@ -429,14 +431,18 @@ async function loadOrders(page = 1) {
 
     try {
         currentPage = page;
-        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}&page=${page}&per_page=${PER_PAGE}`);
+        const viewModeParam = isAdmin ? `&view_mode=${viewMode}` : '';
+        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}&page=${page}&per_page=${PER_PAGE}${viewModeParam}`);
         const data = await response.json();
         if (data.success) {
             allOrders = data.orders;
             currentPage = data.pagination.page;
             totalPages = data.pagination.total_pages;
+            isAdmin = data.is_admin;
+            viewMode = data.view_mode;
             renderOrders(allOrders);
             renderPagination();
+            renderAdminFilter();
             populateFilterModelSelect();
         } else {
             ordersList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><p>加载失败: ' + data.error + '</p></div>';
@@ -501,6 +507,31 @@ function renderOrders(orders) {
 
     html += '</tbody></table>';
     ordersList.innerHTML = html;
+}
+
+function renderAdminFilter() {
+    const filterEl = document.getElementById('adminFilter');
+    if (!filterEl) return;
+    
+    if (!isAdmin) {
+        filterEl.innerHTML = '';
+        return;
+    }
+    
+    const mineClass = viewMode === 'mine' ? 'active' : '';
+    const allClass = viewMode === 'all' ? 'active' : '';
+    
+    filterEl.innerHTML = `
+        <div class="admin-filter">
+            <button class="${mineClass}" onclick="switchViewMode('mine')">我的排队</button>
+            <button class="${allClass}" onclick="switchViewMode('all')">全部排队</button>
+        </div>
+    `;
+}
+
+function switchViewMode(mode) {
+    viewMode = mode;
+    loadOrders(1);
 }
 
 function renderPagination() {
