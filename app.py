@@ -305,23 +305,24 @@ def get_models():
 @app.route('/api/calculate-date', methods=['POST'])
 @require_auth
 def calculate_date():
-    """计算可发货日期：同步写入，确保返回正确的row_index避免重复记录"""
+    """计算可发货日期：只计算不写入，速度最快。写入由create_order处理。"""
     try:
         data = request.json
         model = data.get('model', '')
         tonnage = data.get('tonnage', '')
-        customer = data.get('customer', '')
         expected_date = data.get('expected_date', '')
         pending_row_index = data.get('pending_row_index', 0)
 
-        # 1. 使用本地计算引擎计算可发货日期
+        # 1. 使用本地计算引擎计算可发货日期（核心操作，约800ms）
         calculated_date, error_msg = calculate_delivery_date(model, tonnage, expected_date)
 
-        # 2. 优先复用前端传来的行号
-        existing_row = pending_row_index if pending_row_index > 0 else 0
-
-        # 3. 如果前端没有传来行号，再按型号查找未提交的待处理行
-        if existing_row == 0:
+        # 2. 查找是否已有该型号的待处理行（只查找，不写入）
+        target_row = 0
+        if pending_row_index > 0:
+            # 前端已传来行号，直接复用
+            target_row = pending_row_index
+        else:
+            # 按型号查找未提交的待处理行（F列为空表示未提交）
             batch_size = 50
             for offset in range(0, 200, batch_size):
                 start = offset + 1
@@ -340,58 +341,18 @@ def calculate_date():
                     a_val = row_data[0] if len(row_data) > 0 else ""
                     f_val = row_data[5] if len(row_data) > 5 else ""
                     if a_val == model and not f_val.strip():
-                        existing_row = actual_row
+                        target_row = actual_row
                         break
 
-                if existing_row > 0:
+                if target_row > 0:
                     break
                 if len(rows) < batch_size:
                     break
 
-        if existing_row > 0:
-            # 复用已有行：更新A-D列数据
-            write_row_idx = existing_row - 1
-            body = {
-                "requests": [{
-                    "updateRangeRequest": {
-                        "sheetId": SHEET_ID,
-                        "gridData": {
-                            "startRow": write_row_idx,
-                            "startColumn": 0,
-                            "rows": [{"values": [
-                                build_cell_value(model),
-                                build_cell_value(tonnage, is_number=True),
-                                build_cell_value(customer),
-                                build_cell_value(expected_date, is_date=True),
-                            ]}]
-                        }
-                    }
-                }]
-            }
-            resp = batch_update(body)
-            target_row = existing_row
-        else:
-            # 新建行
-            empty_row = get_next_empty_row(SHEET_ID)
-            write_row_idx = empty_row - 1
-            remark = f"{tonnage}{customer}"
-            # 序号直接用行号
-            serial_no = str(empty_row)
-            resp = write_order_row(
-                write_row_idx, model, tonnage, customer, expected_date,
-                calculated_date, "", "", remark, serial_no, "", ""
-            )
-            target_row = empty_row
-
-        result = resp.json()
-
-        if "responses" not in result:
-            return jsonify({"success": False, "error": f"写入数据失败: {json.dumps(result, ensure_ascii=False)}"})
-
         return jsonify({
             "success": True,
             "calculated_date": calculated_date,
-            "row_index": target_row
+            "row_index": target_row  # 0表示需要新建行，>0表示复用已有行
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -400,7 +361,7 @@ def calculate_date():
 @app.route('/api/orders', methods=['POST'])
 @require_auth
 def create_order():
-    """创建订单：优化版本，减少API调用次数"""
+    """创建订单：负责所有写入操作，calculate_date只计算不写入"""
     try:
         data = request.json
         model = data.get('model', '')
@@ -416,15 +377,13 @@ def create_order():
         submit_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         if row_index > 0:
-            # 更新已有行（由calculate_date创建的行）
+            # 更新已有行（由calculate_date查找的行）
             write_row_idx = row_index - 1  # 转为0-based
-            # 序号直接用行号，避免读取I列的API调用
             serial_no = str(row_index)
         else:
             # 新建行：找到第一个空行
             empty_row = get_next_empty_row(SHEET_ID)
             write_row_idx = empty_row - 1
-            # 序号直接用行号，避免扫描A/I列的多次API调用
             serial_no = str(empty_row)
 
         # 计算可发货日期（用于写入E列，有缓存）
