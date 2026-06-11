@@ -425,7 +425,9 @@ def create_order():
 
 # 全局缓存：原始订单数据（不过滤权限和日期）
 _orders_cache = {"data": None, "timestamp": 0}
-CACHE_TTL = 30  # 缓存30秒
+# 全局缓存：过滤+排序后的结果（按view_mode缓存）
+_filtered_cache = {"mine": None, "all": None, "timestamp": 0}
+CACHE_TTL = 60  # 缓存60秒
 
 def fetch_all_orders_raw():
     """从腾讯表格读取所有订单原始数据，带缓存"""
@@ -433,9 +435,9 @@ def fetch_all_orders_raw():
     if _orders_cache["data"] is not None and (now - _orders_cache["timestamp"]) < CACHE_TTL:
         return _orders_cache["data"]
 
-    # Step 1: 快速扫描A列，找到数据边界（每批200行）
+    # Step 1: 快速扫描A列，找到数据边界（每批500行）
     last_data_row = 1
-    batch_size = 200
+    batch_size = 500
     for offset in range(0, 2000, batch_size):
         start = offset + 1
         end = offset + batch_size
@@ -461,9 +463,9 @@ def fetch_all_orders_raw():
         _orders_cache["timestamp"] = now
         return []
 
-    # Step 2: 只读取有数据的范围（A2:Llast_data_row）
+    # Step 2: 只读取有数据的范围（A2:Llast_data_row），每批200行
     all_rows = []
-    batch_size = 100
+    batch_size = 200
     for offset in range(1, last_data_row, batch_size):
         start = offset + 1  # 从第2行开始（跳过表头）
         end = min(offset + batch_size, last_data_row)
@@ -508,6 +510,63 @@ def fetch_all_orders_raw():
 
     _orders_cache["data"] = orders
     _orders_cache["timestamp"] = now
+    # 清除过滤缓存（原始数据已更新）
+    _filtered_cache["mine"] = None
+    _filtered_cache["all"] = None
+    return orders
+
+def get_filtered_orders(submitter_id, is_admin, view_mode):
+    """获取过滤+排序后的订单列表，带缓存"""
+    now = datetime.now().timestamp()
+    cache_key = "all" if is_admin and view_mode == "all" else "mine"
+
+    # 检查过滤缓存是否有效（基于原始数据的时间戳）
+    if (_filtered_cache[cache_key] is not None and
+        _filtered_cache["timestamp"] == _orders_cache["timestamp"] and
+        (now - _orders_cache["timestamp"]) < CACHE_TTL):
+        return _filtered_cache[cache_key]
+
+    # 读取原始数据
+    all_orders = fetch_all_orders_raw()
+    today = datetime.now().date()
+
+    # 过滤
+    orders = []
+    for order in all_orders:
+        row_submitter_id = order["submitter_id"]
+
+        # 权限过滤
+        if not is_admin:
+            if submitter_id and row_submitter_id and row_submitter_id != submitter_id:
+                continue
+        else:
+            if view_mode == 'mine':
+                if not row_submitter_id or row_submitter_id != submitter_id:
+                    continue
+
+        # 期望发货日期过滤
+        expected_date_str = order["expected_date"]
+        if expected_date_str:
+            try:
+                expected_date = datetime.strptime(expected_date_str, "%Y-%m-%d").date()
+                if expected_date < today:
+                    continue
+            except:
+                pass
+
+        orders.append(order)
+
+    # 默认按排队日期升序排列（空日期排最后）
+    def sort_key(o):
+        qd = o.get("queue_date", "")
+        if qd and len(qd) >= 10:
+            return (0, qd)
+        return (1, "")
+    orders.sort(key=sort_key)
+
+    # 存入缓存
+    _filtered_cache[cache_key] = orders
+    _filtered_cache["timestamp"] = _orders_cache["timestamp"]
     return orders
 
 
@@ -528,43 +587,8 @@ def get_orders():
         if per_page > 100:
             per_page = 100
 
-        # 读取原始数据（带缓存）
-        all_orders = fetch_all_orders_raw()
-        today = datetime.now().date()
-
-        # 过滤
-        orders = []
-        for order in all_orders:
-            row_submitter_id = order["submitter_id"]
-
-            # 权限过滤
-            if not is_admin:
-                if submitter_id and row_submitter_id and row_submitter_id != submitter_id:
-                    continue
-            else:
-                if view_mode == 'mine':
-                    if not row_submitter_id or row_submitter_id != submitter_id:
-                        continue
-
-            # 期望发货日期过滤
-            expected_date_str = order["expected_date"]
-            if expected_date_str:
-                try:
-                    expected_date = datetime.strptime(expected_date_str, "%Y-%m-%d").date()
-                    if expected_date < today:
-                        continue
-                except:
-                    pass
-
-            orders.append(order)
-
-        # 默认按排队日期升序排列（空日期排最后）
-        def sort_key(o):
-            qd = o.get("queue_date", "")
-            if qd and len(qd) >= 10:
-                return (0, qd)
-            return (1, "")
-        orders.sort(key=sort_key)
+        # 使用缓存的过滤结果
+        orders = get_filtered_orders(submitter_id, is_admin, view_mode)
 
         # 分页
         total = len(orders)
