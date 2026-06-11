@@ -100,8 +100,8 @@ def get_headers():
 
 
 def read_users():
-    """读取用户表（A2:C30），返回 [{name, employee_id, password}, ...]"""
-    url = f"{BASE_URL}/files/{USER_FILE_ID}/{USER_SHEET_ID}/A2:C30"
+    """读取用户表（A2:D30），返回 [{name, employee_id, password, is_admin}, ...]"""
+    url = f"{BASE_URL}/files/{USER_FILE_ID}/{USER_SHEET_ID}/A2:D30"
     resp = requests.get(url, headers=get_headers(), timeout=30)
     users = []
     if resp.status_code == 200:
@@ -111,12 +111,24 @@ def read_users():
             values = row.get("values", [])
             row_data = [parse_cell_value(v.get("cellValue")) for v in values]
             if len(row_data) >= 3 and row_data[0] and row_data[1]:
+                # D列标注"管理员"表示是管理员
+                is_admin = len(row_data) >= 4 and row_data[3] == "管理员"
                 users.append({
                     "name": row_data[0],
                     "employee_id": row_data[1],
-                    "password": row_data[2]
+                    "password": row_data[2],
+                    "is_admin": is_admin
                 })
     return users
+
+
+def is_user_admin(employee_id):
+    """检查用户是否是管理员"""
+    users = read_users()
+    for user in users:
+        if user["employee_id"] == employee_id:
+            return user.get("is_admin", False)
+    return False
 
 
 def parse_cell_value(cell_value):
@@ -410,9 +422,10 @@ def create_order():
 @app.route('/api/orders', methods=['GET'])
 @require_auth
 def get_orders():
-    """获取订单列表"""
+    """获取订单列表：管理员可查看所有，其他人只能看自己的"""
     try:
         submitter_id = request.args.get('submitter_id', '')
+        is_admin = is_user_admin(submitter_id)
 
         # 分批读取表格数据，每批50行，避免RangeSize过大导致400001错误
         all_rows = []
@@ -453,9 +466,9 @@ def get_orders():
             if not row_data[0]:
                 continue
 
-            # 检查权限（只过滤有submitter_id的行，空行不过滤）
+            # 检查权限：非管理员只能看自己的订单，管理员可以看所有
             row_submitter_id = row_data[10]
-            if submitter_id and row_submitter_id and row_submitter_id != submitter_id:
+            if not is_admin and submitter_id and row_submitter_id and row_submitter_id != submitter_id:
                 continue
 
             # 检查排队日期是否过期
@@ -493,7 +506,7 @@ def get_orders():
 @app.route('/api/orders/<int:row_index>', methods=['PUT'])
 @require_auth
 def update_order(row_index):
-    """修改订单"""
+    """修改订单：管理员可修改所有，其他人只能修改自己的"""
     try:
         data = request.json
         model = data.get('model', '')
@@ -505,6 +518,7 @@ def update_order(row_index):
         submitter_id = data.get('submitter_id', '')
 
         remark = f"{tonnage}{customer}"
+        is_admin = is_user_admin(submitter_id)
 
         # 读取原订单检查权限和吨位
         grid_data = read_sheet_range(SHEET_ID, f"A{row_index}:L{row_index}")
@@ -513,8 +527,8 @@ def update_order(row_index):
             orig_values = [parse_cell_value(v.get("cellValue")) for v in rows[0].get("values", [])]
             original_tonnage = orig_values[1] if len(orig_values) > 1 else "0"
             row_submitter_id = orig_values[10] if len(orig_values) > 10 else ""
-            # 权限检查：只能操作自己的数据
-            if row_submitter_id and row_submitter_id != submitter_id:
+            # 权限检查：非管理员只能操作自己的数据
+            if not is_admin and row_submitter_id and row_submitter_id != submitter_id:
                 return jsonify({"success": False, "error": "无权修改他人订单"})
             try:
                 if float(tonnage) > float(original_tonnage):
@@ -547,9 +561,10 @@ def update_order(row_index):
 @app.route('/api/orders/<int:row_index>', methods=['DELETE'])
 @require_auth
 def delete_order(row_index):
-    """删除订单（row_index是1-based）"""
+    """删除订单：管理员可删除所有，其他人只能删除自己的"""
     try:
         submitter_id = request.args.get('submitter_id', '')
+        is_admin = is_user_admin(submitter_id)
 
         # 读取原订单检查权限
         grid_data = read_sheet_range(SHEET_ID, f"A{row_index}:L{row_index}")
@@ -557,8 +572,8 @@ def delete_order(row_index):
         if rows:
             orig_values = [parse_cell_value(v.get("cellValue")) for v in rows[0].get("values", [])]
             row_submitter_id = orig_values[10] if len(orig_values) > 10 else ""
-            # 权限检查：只能操作自己的数据
-            if row_submitter_id and row_submitter_id != submitter_id:
+            # 权限检查：非管理员只能操作自己的数据
+            if not is_admin and row_submitter_id and row_submitter_id != submitter_id:
                 return jsonify({"success": False, "error": "无权删除他人订单"})
         else:
             return jsonify({"success": False, "error": "订单不存在"})
