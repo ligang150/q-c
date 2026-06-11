@@ -554,6 +554,21 @@ async function openEditModal(rowIndex) {
                 // 清除提示
                 document.getElementById('editDateHint').textContent = '';
                 document.getElementById('editDateHint').style.color = '';
+                // 如果可发货日期不是日期格式（如"请联系商务支持"），禁止编辑排队日期
+                const calcDate = order.calculated_date || '';
+                const isDate = calcDate && calcDate.match(/^\d{4}-\d{2}-\d{2}$/);
+                const editQueueDateInput = document.getElementById('editQueueDate');
+                if (!isDate) {
+                    editQueueDateInput.disabled = true;
+                    editQueueDateInput.style.background = '#e9ecef';
+                    editQueueDateInput.style.cursor = 'not-allowed';
+                    editQueueDateInput.title = '可发货日期无效，无法编辑排队日期';
+                } else {
+                    editQueueDateInput.disabled = false;
+                    editQueueDateInput.style.background = '#fff';
+                    editQueueDateInput.style.cursor = 'pointer';
+                    editQueueDateInput.title = '';
+                }
                 document.getElementById('editModal').classList.add('show');
             }
         }
