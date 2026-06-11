@@ -2,7 +2,10 @@ let currentUser = { name: '用户', id: 'auth_user' };
 let allOrders = [];
 let modelOptions = [];
 let pendingRowIndex = 0;
+let currentPage = 1;
+let totalPages = 1;
 const API_BASE = '';
+const PER_PAGE = 20;
 
 // 从localStorage读取密码、员工ID和用户名
 let accessPassword = localStorage.getItem('accessPassword') || '';
@@ -420,18 +423,20 @@ async function handleCreateOrder(e) {
     }
 }
 
-async function loadOrders() {
+async function loadOrders(page = 1) {
     const ordersList = document.getElementById('ordersList');
     ordersList.innerHTML = '<div class="loading">加载中...</div>';
 
     try {
-        console.log('[loadOrders] currentUser.id=', currentUser.id, 'employeeId=', employeeId);
-        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}`);
+        currentPage = page;
+        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}&page=${page}&per_page=${PER_PAGE}`);
         const data = await response.json();
-        console.log('[loadOrders] response:', data);
         if (data.success) {
             allOrders = data.orders;
+            currentPage = data.pagination.page;
+            totalPages = data.pagination.total_pages;
             renderOrders(allOrders);
+            renderPagination();
             populateFilterModelSelect();
         } else {
             ordersList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><p>加载失败: ' + data.error + '</p></div>';
@@ -496,6 +501,38 @@ function renderOrders(orders) {
 
     html += '</tbody></table>';
     ordersList.innerHTML = html;
+}
+
+function renderPagination() {
+    const paginationEl = document.getElementById('pagination');
+    if (!paginationEl) return;
+    
+    if (totalPages <= 1) {
+        paginationEl.innerHTML = '';
+        return;
+    }
+    
+    let html = '<div class="pagination">';
+    
+    // 上一页
+    if (currentPage > 1) {
+        html += `<button onclick="loadOrders(${currentPage - 1})">上一页</button>`;
+    } else {
+        html += `<button disabled>上一页</button>`;
+    }
+    
+    // 页码
+    html += `<span class="page-info">${currentPage} / ${totalPages}</span>`;
+    
+    // 下一页
+    if (currentPage < totalPages) {
+        html += `<button onclick="loadOrders(${currentPage + 1})">下一页</button>`;
+    } else {
+        html += `<button disabled>下一页</button>`;
+    }
+    
+    html += '</div>';
+    paginationEl.innerHTML = html;
 }
 
 function escapeHtml(text) {

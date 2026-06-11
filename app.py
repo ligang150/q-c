@@ -422,10 +422,20 @@ def create_order():
 @app.route('/api/orders', methods=['GET'])
 @require_auth
 def get_orders():
-    """获取订单列表：管理员可查看所有，其他人只能看自己的"""
+    """获取订单列表：管理员可查看所有，其他人只能看自己的；仅显示期望发货日期>=今天的订单；支持分页"""
     try:
         submitter_id = request.args.get('submitter_id', '')
         is_admin = is_user_admin(submitter_id)
+        
+        # 分页参数
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        if page < 1:
+            page = 1
+        if per_page < 1:
+            per_page = 20
+        if per_page > 100:
+            per_page = 100
 
         # 分批读取表格数据，每批50行，避免RangeSize过大导致400001错误
         all_rows = []
@@ -471,15 +481,15 @@ def get_orders():
             if not is_admin and submitter_id and row_submitter_id and row_submitter_id != submitter_id:
                 continue
 
-            # 检查排队日期是否过期
-            queue_date_str = row_data[5]
-            if queue_date_str:
+            # 检查期望发货日期是否大于等于今天
+            expected_date_str = row_data[3]
+            if expected_date_str:
                 try:
-                    queue_date = datetime.strptime(queue_date_str, "%Y-%m-%d").date()
-                    if queue_date < today:
+                    expected_date = datetime.strptime(expected_date_str, "%Y-%m-%d").date()
+                    if expected_date < today:
                         continue
                 except:
-                    pass  # 非日期格式（如"请联系商务支持"）不检查过期
+                    pass  # 非日期格式不过滤
 
             order = {
                 "row_index": i + 1,  # 1-based
@@ -497,8 +507,23 @@ def get_orders():
                 "submit_time": row_data[11]
             }
             orders.append(order)
+        
+        # 分页
+        total = len(orders)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_orders = orders[start_idx:end_idx]
 
-        return jsonify({"success": True, "orders": orders})
+        return jsonify({
+            "success": True, 
+            "orders": paginated_orders,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": (total + per_page - 1) // per_page
+            }
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
