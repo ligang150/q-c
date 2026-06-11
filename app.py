@@ -488,8 +488,8 @@ def get_orders():
             else:
                 # 管理员根据view_mode筛选
                 if view_mode == 'mine':
-                    # 只看submitter_id匹配的订单
-                    if row_submitter_id and row_submitter_id != submitter_id:
+                    # 只看submitter_id匹配的订单，空的也跳过
+                    if not row_submitter_id or row_submitter_id != submitter_id:
                         continue
 
             # 检查期望发货日期是否大于等于今天（>=今天）
