@@ -866,7 +866,7 @@ async function handleUpdateOrder(e) {
 async function deleteOrder(rowIndex) {
     if (!confirm('确定要删除这个排队吗？')) return;
     try {
-        const response = await apiFetch(`${API_BASE}/api/orders/${rowIndex}`, { method: 'DELETE' });
+        const response = await apiFetch(`${API_BASE}/api/orders/${rowIndex}?submitter_id=${currentUser.id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             showToast('排队删除成功！', 'success');
