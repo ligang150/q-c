@@ -423,8 +423,10 @@ async function loadOrders() {
     ordersList.innerHTML = '<div class="loading">加载中...</div>';
 
     try {
+        console.log('[loadOrders] currentUser.id=', currentUser.id, 'employeeId=', employeeId);
         const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}`);
         const data = await response.json();
+        console.log('[loadOrders] response:', data);
         if (data.success) {
             allOrders = data.orders;
             renderOrders(allOrders);
@@ -433,6 +435,7 @@ async function loadOrders() {
             ordersList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><p>加载失败: ' + data.error + '</p></div>';
         }
     } catch (error) {
+        console.error('[loadOrders] error:', error);
         ordersList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><p>网络错误，请检查连接</p></div>';
     }
 }
