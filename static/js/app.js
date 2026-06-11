@@ -4,9 +4,14 @@ let modelOptions = [];
 let pendingRowIndex = 0;
 const API_BASE = '';
 
-// 从localStorage读取密码和员工ID
+// 从localStorage读取密码、员工ID和用户名
 let accessPassword = localStorage.getItem('accessPassword') || '';
 let employeeId = localStorage.getItem('employeeId') || '';
+let userName = localStorage.getItem('userName') || '';
+if (userName) {
+    currentUser.name = userName;
+    currentUser.id = employeeId;
+}
 
 // 所有API请求自动带上密码头和员工ID头
 function apiFetch(url, options = {}) {
@@ -61,6 +66,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 employeeId = '';
                 localStorage.removeItem('accessPassword');
                 localStorage.removeItem('employeeId');
+                localStorage.removeItem('userName');
                 showAuthOverlay('密码已变更，请重新登录');
             }
         })
@@ -120,9 +126,11 @@ function doAuth() {
         if (data.success) {
             accessPassword = data.access_password || '';
             employeeId = selectedEmployeeId;
+            const name = data.user?.name || '用户';
             localStorage.setItem('accessPassword', accessPassword);
             localStorage.setItem('employeeId', selectedEmployeeId);
-            currentUser.name = data.user?.name || '用户';
+            localStorage.setItem('userName', name);
+            currentUser.name = name;
             currentUser.id = selectedEmployeeId;
             hideAuthOverlay();
             initApp();
@@ -628,6 +636,7 @@ async function handleChangePassword(e) {
             employeeId = '';
             localStorage.removeItem('accessPassword');
             localStorage.removeItem('employeeId');
+            localStorage.removeItem('userName');
             showAuthOverlay('密码已修改，请重新登录');
         } else {
             showToast(data.error || '密码修改失败', 'error');
@@ -771,6 +780,7 @@ function doLogout() {
     employeeId = '';
     localStorage.removeItem('accessPassword');
     localStorage.removeItem('employeeId');
+    localStorage.removeItem('userName');
     currentUser = { name: '用户', id: '' };
     document.getElementById('changePwdBtn').style.display = 'none';
     document.getElementById('logoutBtn').style.display = 'none';
@@ -966,6 +976,7 @@ function startIdleTimer() {
             employeeId = '';
             localStorage.removeItem('accessPassword');
             localStorage.removeItem('employeeId');
+            localStorage.removeItem('userName');
             // 如果有未提交的排队，清除
             if (hasUnsavedOrder()) {
                 document.getElementById('orderForm').reset();
