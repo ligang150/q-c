@@ -562,22 +562,12 @@ def get_filtered_orders(submitter_id, is_admin, view_mode):
                 if not row_submitter_id or row_submitter_id != submitter_id:
                     continue
 
-        # 期望发货日期过滤
+        # 期望发货日期过滤：仅显示期望发货日期>=今天的订单
         expected_date_str = order["expected_date"]
         if expected_date_str:
             try:
                 expected_date = datetime.strptime(expected_date_str, "%Y-%m-%d").date()
                 if expected_date < today:
-                    continue
-            except:
-                pass
-
-        # 排队日期过滤：仅显示排队日期>=今天的订单
-        queue_date_str = order["queue_date"]
-        if queue_date_str:
-            try:
-                queue_date = datetime.strptime(queue_date_str, "%Y-%m-%d").date()
-                if queue_date < today:
                     continue
             except:
                 pass
