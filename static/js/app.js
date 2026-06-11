@@ -539,10 +539,10 @@ function sortOrders() {
 
 async function openEditModal(rowIndex) {
     try {
-        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${currentUser.id}`);
+        const response = await apiFetch(`${API_BASE}/api/orders/${rowIndex}?submitter_id=${currentUser.id}`);
         const data = await response.json();
         if (data.success) {
-            const order = data.orders.find(o => o.row_index === rowIndex);
+            const order = data.order;
             if (order) {
                 document.getElementById('editRowIndex').value = rowIndex;
                 document.getElementById('editModel').value = order.model || '';

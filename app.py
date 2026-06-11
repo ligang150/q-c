@@ -503,6 +503,59 @@ def get_orders():
         return jsonify({"success": False, "error": str(e)})
 
 
+@app.route('/api/orders/<int:row_index>', methods=['GET'])
+@require_auth
+def get_order(row_index):
+    """获取单条订单：直接读取指定行，速度快"""
+    try:
+        submitter_id = request.args.get('submitter_id', '')
+        is_admin = is_user_admin(submitter_id)
+
+        # 直接读取指定行
+        grid_data = read_sheet_range(SHEET_ID, f"A{row_index}:L{row_index}")
+        rows = grid_data.get("rows", [])
+        if not rows:
+            return jsonify({"success": False, "error": "订单不存在"})
+
+        values = rows[0].get("values", [])
+        if not values:
+            return jsonify({"success": False, "error": "订单不存在"})
+
+        def get_col(idx):
+            if idx < len(values):
+                cv = values[idx].get("cellValue")
+                if cv:
+                    return parse_cell_value(cv)
+            return ""
+
+        row_data = [get_col(j) for j in range(12)]
+
+        # 检查权限
+        row_submitter_id = row_data[10]
+        if not is_admin and submitter_id and row_submitter_id and row_submitter_id != submitter_id:
+            return jsonify({"success": False, "error": "无权查看他人订单"})
+
+        order = {
+            "row_index": row_index,
+            "model": row_data[0],
+            "tonnage": row_data[1],
+            "customer": row_data[2],
+            "expected_date": row_data[3],
+            "calculated_date": row_data[4],
+            "queue_date": row_data[5],
+            "submitter": row_data[6],
+            "remark": row_data[7],
+            "serial_no": row_data[8],
+            "last_entry": row_data[9],
+            "submitter_id": row_submitter_id,
+            "submit_time": row_data[11]
+        }
+
+        return jsonify({"success": True, "order": order})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
 @app.route('/api/orders/<int:row_index>', methods=['PUT'])
 @require_auth
 def update_order(row_index):
