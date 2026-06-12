@@ -141,7 +141,7 @@ def read_users():
             if len(row_data) >= 3 and row_data[0] and row_data[1]:
                 # D列为用户权限说明：管理员/全部权限用户可查看全部排队
                 permission_text = row_data[3].strip() if len(row_data) >= 4 else ""
-                is_admin = permission_text in ("管理员", "是", "全部", "全部排队", "可查看全部", "admin", "Admin", "ADMIN")
+                is_admin = permission_text in ("管理员", "经理", "是", "全部", "全部排队", "可查看全部", "admin", "Admin", "ADMIN")
                 users.append({
                     "name": row_data[0],
                     "employee_id": row_data[1],
