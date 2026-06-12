@@ -9,6 +9,7 @@ let viewMode = 'mine'; // 'mine' 或 'all'
 let listenersInitialized = false;
 let ordersDirty = true;
 let recentlyDeletedOrders = new Map();
+let filterTimer = null;
 const RECENT_DELETE_TTL = 30000;
 const API_BASE = '';
 const PER_PAGE = 20;
@@ -447,7 +448,11 @@ async function loadOrders(page = 1, forceRefresh = false) {
         const viewModeParam = `&view_mode=${viewMode}`;
         const refreshParam = forceRefresh ? `&_ts=${Date.now()}` : '';
         const submitterNameParam = `&submitter_name=${encodeURIComponent(currentUser.name || '')}`;
-        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${encodeURIComponent(currentUser.id || '')}${submitterNameParam}&page=${page}&per_page=${PER_PAGE}${viewModeParam}${refreshParam}`, {
+        const modelFilter = encodeURIComponent(document.getElementById('filterModel')?.value || '');
+        const customerFilter = encodeURIComponent(document.getElementById('filterCustomer')?.value.trim() || '');
+        const sortType = encodeURIComponent(document.getElementById('sortSelect')?.value || '');
+        const filterParams = `&model_filter=${modelFilter}&customer_filter=${customerFilter}&sort=${sortType}`;
+        const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${encodeURIComponent(currentUser.id || '')}${submitterNameParam}&page=${page}&per_page=${PER_PAGE}${viewModeParam}${filterParams}${refreshParam}`, {
             cache: 'no-store'
         });
         const data = await response.json();
@@ -629,41 +634,12 @@ function escapeHtml(text) {
 }
 
 function filterOrders() {
-    const modelFilter = document.getElementById('filterModel').value;
-    const customerFilter = document.getElementById('filterCustomer').value.trim().toLowerCase();
-
-    let filtered = [...allOrders];
-
-    if (modelFilter) {
-        filtered = filtered.filter(order => order.model === modelFilter);
-    }
-
-    if (customerFilter) {
-        filtered = filtered.filter(order =>
-            order.customer && order.customer.toLowerCase().includes(customerFilter)
-        );
-    }
-
-    renderOrders(sortOrderList(filtered));
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => loadOrders(1, false), 250);
 }
 
 function sortOrders() {
-    filterOrders();
-}
-
-function sortOrderList(orders) {
-    const sortType = document.getElementById('sortSelect').value;
-    if (!sortType) {
-        return orders;
-    }
-    return [...orders].sort((a, b) => {
-        switch(sortType) {
-            case 'model': return (a.model || '').localeCompare(b.model || '');
-            case 'queueDate': return new Date(a.queue_date || 0) - new Date(b.queue_date || 0);
-            case 'tonnage': return parseFloat(a.tonnage || 0) - parseFloat(b.tonnage || 0);
-            default: return 0;
-        }
-    });
+    loadOrders(1, false);
 }
 
 async function openEditModal(rowIndex) {

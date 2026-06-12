@@ -836,6 +836,9 @@ def get_orders():
         is_admin = current_user.get("access_level") == "admin"
         requested_view_mode = request.args.get('view_mode', 'mine')
         view_mode = normalize_view_mode(current_user, requested_view_mode)
+        model_filter = request.args.get('model_filter', '').strip()
+        customer_filter = request.args.get('customer_filter', '').strip().lower()
+        sort_type = request.args.get('sort', '').strip()
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         if page < 1:
@@ -847,6 +850,23 @@ def get_orders():
 
         # 使用缓存的过滤结果
         orders = get_filtered_orders(submitter_id, current_user, view_mode, submitter_name)
+        if model_filter:
+            orders = [o for o in orders if o.get("model", "") == model_filter]
+        if customer_filter:
+            orders = [o for o in orders if customer_filter in o.get("customer", "").lower()]
+        if sort_type:
+            def sort_key(o):
+                if sort_type == "model":
+                    return o.get("model", "")
+                if sort_type == "queueDate":
+                    return o.get("queue_date", "") or "9999-12-31"
+                if sort_type == "tonnage":
+                    try:
+                        return float(o.get("tonnage", 0) or 0)
+                    except ValueError:
+                        return 0
+                return ""
+            orders = sorted(orders, key=sort_key)
 
         # 分页
         total = len(orders)
