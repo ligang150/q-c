@@ -124,12 +124,12 @@ def get_headers():
 
 
 def read_users():
-    """读取用户表，带短时缓存，返回 [{name, employee_id, password, is_admin}, ...]"""
+    """读取用户表，带短时缓存，返回用户权限信息"""
     now = time.time()
     if _users_cache["data"] is not None and (now - _users_cache["timestamp"]) < USER_CACHE_TTL:
         return _users_cache["data"]
 
-    url = f"{BASE_URL}/files/{USER_FILE_ID}/{USER_SHEET_ID}/A2:D200"
+    url = f"{BASE_URL}/files/{USER_FILE_ID}/{USER_SHEET_ID}/A2:F200"
     resp = HTTP.get(url, headers=get_headers(), timeout=30)
     users = []
     if resp.status_code == 200:
@@ -139,14 +139,21 @@ def read_users():
             values = row.get("values", [])
             row_data = [parse_cell_value(v.get("cellValue")) for v in values]
             if len(row_data) >= 3 and row_data[0] and row_data[1]:
-                # D列为用户权限说明：管理员/全部权限用户可查看全部排队
-                permission_text = row_data[3].strip() if len(row_data) >= 4 else ""
-                is_admin = permission_text in ("管理员", "经理", "是", "全部", "全部排队", "可查看全部", "admin", "Admin", "ADMIN")
+                role = row_data[3].strip() if len(row_data) >= 4 else ""
+                department = row_data[4].strip() if len(row_data) >= 5 else ""
+                permission_text = row_data[5].strip() if len(row_data) >= 6 else ""
+                is_admin = role == "管理员" or permission_text == "能操作所有数据"
+                is_manager = role == "经理" or permission_text == "能操作本部门所有数据"
+                access_level = "admin" if is_admin else ("department" if is_manager else "self")
                 users.append({
                     "name": row_data[0],
                     "employee_id": row_data[1],
                     "password": row_data[2],
                     "is_admin": is_admin,
+                    "is_manager": is_manager,
+                    "role": role,
+                    "department": department,
+                    "access_level": access_level,
                     "permission": permission_text
                 })
     _users_cache["data"] = users
@@ -156,11 +163,30 @@ def read_users():
 
 def is_user_admin(employee_id):
     """检查用户是否是管理员"""
-    users = read_users()
-    for user in users:
-        if normalize_user_key(user["employee_id"]) == normalize_user_key(employee_id):
-            return user.get("is_admin", False)
-    return False
+    user = get_user_by_id(employee_id)
+    return bool(user and user.get("access_level") == "admin")
+
+
+def get_user_by_id(employee_id):
+    """按员工号读取用户"""
+    current_id = normalize_user_key(employee_id)
+    if not current_id:
+        return None
+    for user in read_users():
+        if normalize_user_key(user.get("employee_id", "")) == current_id:
+            return user
+    return None
+
+
+def get_user_by_name(name):
+    """按姓名读取用户，兼容历史订单缺少员工号的情况"""
+    current_name = str(name or "").strip()
+    if not current_name:
+        return None
+    for user in read_users():
+        if str(user.get("name", "")).strip() == current_name:
+            return user
+    return None
 
 
 def parse_cell_value(cell_value):
@@ -715,13 +741,41 @@ def resolve_submitter_name(submitter_id, submitter_name=""):
     return name
 
 
-def get_filtered_orders(submitter_id, is_admin, view_mode, submitter_name=""):
+def get_order_submitter_user(order):
+    """获取订单提交人的用户记录，优先员工号，兼容历史姓名"""
+    return get_user_by_id(order.get("submitter_id", "")) or get_user_by_name(order.get("submitter", ""))
+
+
+def can_operate_order(order, current_user, submitter_id, submitter_name, view_mode="mine"):
+    """按用户表权限判断是否可查看/操作订单"""
+    access_level = (current_user or {}).get("access_level", "self")
+    if view_mode == "mine" or access_level == "self":
+        return is_same_submitter(order, submitter_id, submitter_name)
+    if access_level == "admin":
+        return True
+    if access_level == "department":
+        current_dept = str((current_user or {}).get("department", "")).strip()
+        order_user = get_order_submitter_user(order)
+        order_dept = str((order_user or {}).get("department", "")).strip()
+        return bool(current_dept and order_dept and current_dept == order_dept)
+    return is_same_submitter(order, submitter_id, submitter_name)
+
+
+def normalize_view_mode(current_user, requested_view_mode):
+    """根据权限标准化视图：管理员全部，经理本部门，业务员本人"""
+    access_level = (current_user or {}).get("access_level", "self")
+    if requested_view_mode == "all" and access_level in ("admin", "department"):
+        return "all"
+    return "mine"
+
+
+def get_filtered_orders(submitter_id, current_user, view_mode, submitter_name=""):
     """获取过滤+排序后的订单列表，带缓存"""
     now = datetime.now().timestamp()
     submitter_name = resolve_submitter_name(submitter_id, submitter_name)
-    view_mode = view_mode if is_admin else "mine"
-    is_mine_view = (not is_admin) or view_mode == "mine"
-    cache_key = "all" if is_admin and view_mode == "all" else f"mine:{normalize_user_key(submitter_id)}:{submitter_name}"
+    access_level = (current_user or {}).get("access_level", "self")
+    is_mine_view = view_mode == "mine"
+    cache_key = f"{access_level}:{view_mode}:{normalize_user_key(submitter_id)}:{submitter_name}:{(current_user or {}).get('department', '')}"
 
     # 检查过滤缓存是否有效（基于原始数据的时间戳）
     if (not is_mine_view and
@@ -737,14 +791,9 @@ def get_filtered_orders(submitter_id, is_admin, view_mode, submitter_name=""):
     # 过滤
     orders = []
     for order in all_orders:
-        # 权限过滤
-        if not is_admin:
-            if not is_same_submitter(order, submitter_id, submitter_name):
-                continue
-        else:
-            if view_mode == 'mine':
-                if not is_same_submitter(order, submitter_id, submitter_name):
-                    continue
+        # 权限过滤：管理员全部、经理本部门、业务员本人
+        if not can_operate_order(order, current_user, submitter_id, submitter_name, view_mode):
+            continue
 
         # 期望发货日期过滤：仅显示期望发货日期>=今天的订单
         expected_date_str = order["expected_date"]
@@ -783,9 +832,10 @@ def get_orders():
 
         submitter_id = request.args.get('submitter_id', '')
         submitter_name = request.args.get('submitter_name', '')
-        is_admin = is_user_admin(submitter_id)
+        current_user = get_user_by_id(submitter_id) or {}
+        is_admin = current_user.get("access_level") == "admin"
         requested_view_mode = request.args.get('view_mode', 'mine')
-        view_mode = requested_view_mode if is_admin else 'mine'
+        view_mode = normalize_view_mode(current_user, requested_view_mode)
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         if page < 1:
@@ -796,7 +846,7 @@ def get_orders():
             per_page = 100
 
         # 使用缓存的过滤结果
-        orders = get_filtered_orders(submitter_id, is_admin, view_mode, submitter_name)
+        orders = get_filtered_orders(submitter_id, current_user, view_mode, submitter_name)
 
         # 分页
         total = len(orders)
@@ -808,6 +858,8 @@ def get_orders():
             "success": True,
             "orders": paginated_orders,
             "is_admin": is_admin,
+            "access_level": current_user.get("access_level", "self"),
+            "department": current_user.get("department", ""),
             "view_mode": view_mode,
             "pagination": {
                 "page": page,
@@ -827,7 +879,7 @@ def get_order(row_index):
     try:
         submitter_id = request.args.get('submitter_id', '')
         submitter_name = request.args.get('submitter_name', '')
-        is_admin = is_user_admin(submitter_id)
+        current_user = get_user_by_id(submitter_id) or {}
 
         # 直接读取指定行
         grid_data = read_sheet_range(SHEET_ID, f"A{row_index}:L{row_index}")
@@ -865,7 +917,7 @@ def get_order(row_index):
         }
 
         # 检查权限
-        if not is_admin and not is_same_submitter(order, submitter_id, submitter_name):
+        if not can_operate_order(order, current_user, submitter_id, submitter_name, "all"):
             return jsonify({"success": False, "error": "无权查看他人订单"})
 
         return jsonify({"success": True, "order": order})
@@ -888,7 +940,7 @@ def update_order(row_index):
         submitter_id = data.get('submitter_id', '')
 
         remark = f"{tonnage}{customer}"
-        is_admin = is_user_admin(submitter_id)
+        current_user = get_user_by_id(submitter_id) or {}
 
         # 读取原订单检查权限和吨位
         grid_data = read_sheet_range(SHEET_ID, f"A{row_index}:L{row_index}")
@@ -900,8 +952,8 @@ def update_order(row_index):
                 "submitter": orig_values[6] if len(orig_values) > 6 else "",
                 "submitter_id": orig_values[10] if len(orig_values) > 10 else ""
             }
-            # 权限检查：非管理员只能操作自己的数据
-            if not is_admin and not is_same_submitter(original_order, submitter_id, submitter):
+            # 权限检查：管理员全部、经理本部门、业务员本人
+            if not can_operate_order(original_order, current_user, submitter_id, submitter, "all"):
                 return jsonify({"success": False, "error": "无权修改他人订单"})
             try:
                 if float(tonnage) > float(original_tonnage):
@@ -941,7 +993,7 @@ def delete_order(row_index):
         expected_order = data.get("order") or data
         submitter_id = request.args.get('submitter_id', '')
         submitter_name = request.args.get('submitter_name', '')
-        is_admin = is_user_admin(submitter_id)
+        current_user = get_user_by_id(submitter_id) or {}
 
         # 读取原订单检查权限
         grid_data = read_sheet_range(SHEET_ID, f"A{row_index}:L{row_index}")
@@ -957,8 +1009,8 @@ def delete_order(row_index):
             }
             if not order_matches_expected(original_order, expected_order):
                 return jsonify({"success": False, "error": "订单行号已变化，请刷新后重试，未执行删除"})
-            # 权限检查：非管理员只能操作自己的数据
-            if not is_admin and not is_same_submitter(original_order, submitter_id, submitter_name):
+            # 权限检查：管理员全部、经理本部门、业务员本人
+            if not can_operate_order(original_order, current_user, submitter_id, submitter_name, "all"):
                 return jsonify({"success": False, "error": "无权删除他人订单"})
         else:
             return jsonify({"success": False, "error": "订单不存在"})
