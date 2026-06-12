@@ -139,13 +139,15 @@ def read_users():
             values = row.get("values", [])
             row_data = [parse_cell_value(v.get("cellValue")) for v in values]
             if len(row_data) >= 3 and row_data[0] and row_data[1]:
-                # D列标注"管理员"表示是管理员
-                is_admin = len(row_data) >= 4 and row_data[3] == "管理员"
+                # D列为用户权限说明：管理员/全部权限用户可查看全部排队
+                permission_text = row_data[3].strip() if len(row_data) >= 4 else ""
+                is_admin = permission_text in ("管理员", "是", "全部", "全部排队", "可查看全部", "admin", "Admin", "ADMIN")
                 users.append({
                     "name": row_data[0],
                     "employee_id": row_data[1],
                     "password": row_data[2],
-                    "is_admin": is_admin
+                    "is_admin": is_admin,
+                    "permission": permission_text
                 })
     _users_cache["data"] = users
     _users_cache["timestamp"] = now
@@ -717,6 +719,7 @@ def get_filtered_orders(submitter_id, is_admin, view_mode, submitter_name=""):
     """获取过滤+排序后的订单列表，带缓存"""
     now = datetime.now().timestamp()
     submitter_name = resolve_submitter_name(submitter_id, submitter_name)
+    view_mode = view_mode if is_admin else "mine"
     is_mine_view = (not is_admin) or view_mode == "mine"
     cache_key = "all" if is_admin and view_mode == "all" else f"mine:{normalize_user_key(submitter_id)}:{submitter_name}"
 
@@ -781,7 +784,8 @@ def get_orders():
         submitter_id = request.args.get('submitter_id', '')
         submitter_name = request.args.get('submitter_name', '')
         is_admin = is_user_admin(submitter_id)
-        view_mode = request.args.get('view_mode', 'mine' if not is_admin else 'all')
+        requested_view_mode = request.args.get('view_mode', 'mine')
+        view_mode = requested_view_mode if is_admin else 'mine'
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         if page < 1:

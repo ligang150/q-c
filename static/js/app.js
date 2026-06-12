@@ -443,7 +443,7 @@ async function loadOrders(page = 1, forceRefresh = false) {
 
     try {
         currentPage = page;
-        const viewModeParam = isAdmin ? `&view_mode=${viewMode}` : '';
+        const viewModeParam = `&view_mode=${viewMode}`;
         const refreshParam = forceRefresh ? `&_ts=${Date.now()}` : '';
         const submitterNameParam = `&submitter_name=${encodeURIComponent(currentUser.name || '')}`;
         const response = await apiFetch(`${API_BASE}/api/orders?submitter_id=${encodeURIComponent(currentUser.id || '')}${submitterNameParam}&page=${page}&per_page=${PER_PAGE}${viewModeParam}${refreshParam}`, {
@@ -567,12 +567,7 @@ function renderOrders(orders) {
 function renderAdminFilter() {
     const filterEl = document.getElementById('adminFilter');
     if (!filterEl) return;
-    
-    if (!isAdmin) {
-        filterEl.innerHTML = '';
-        return;
-    }
-    
+
     const mineClass = viewMode === 'mine' ? 'active' : '';
     const allClass = viewMode === 'all' ? 'active' : '';
     
