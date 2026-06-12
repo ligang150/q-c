@@ -436,9 +436,28 @@ def create_order():
         submit_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         if row_index > 0:
-            # 更新已有行（由calculate_date查找的行）
-            write_row_idx = row_index - 1  # 转为0-based
-            serial_no = str(row_index)
+            # 检查该行A列是否为空，如果不为空则找新行
+            grid_data = read_sheet_range(SHEET_ID, f"A{row_index}:A{row_index}")
+            rows = grid_data.get("rows", [])
+            a_col_empty = True
+            if rows and len(rows) > 0:
+                for v in rows[0].get("values", []):
+                    cv = v.get("cellValue")
+                    if cv:
+                        text = parse_cell_value(cv)
+                        if text.strip():
+                            a_col_empty = False
+                            break
+            
+            if a_col_empty:
+                # A列为空，可以写入
+                write_row_idx = row_index - 1  # 转为0-based
+                serial_no = str(row_index)
+            else:
+                # A列有数据，找新行
+                empty_row = get_next_empty_row(SHEET_ID)
+                write_row_idx = empty_row - 1
+                serial_no = str(empty_row)
         else:
             # 新建行：找到第一个空行
             empty_row = get_next_empty_row(SHEET_ID)
