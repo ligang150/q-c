@@ -104,7 +104,7 @@ def parse_number(val):
 
 # 缓存：工作表数据
 cache = {}
-CACHE_TTL = 10  # 10秒缓存，平衡速度和数据实时性
+CACHE_TTL = 60  # 60秒缓存，平衡速度和数据实时性
 
 
 def get_sheet_data(sheet_id, start_row, capacity_col, limit_cell, row_count):

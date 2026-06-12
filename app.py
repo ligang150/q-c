@@ -319,10 +319,55 @@ def get_models():
         return jsonify({"success": False, "error": str(e)})
 
 
+# 计算结果缓存：避免重复计算
+_calc_result_cache = {"key": None, "result": None, "timestamp": 0}
+_CALC_CACHE_TTL = 30  # 30秒缓存
+
+# 待处理行缓存
+_pending_row_cache = {"data": None, "timestamp": 0}
+_PENDING_ROW_CACHE_TTL = 30
+
+def _get_pending_rows():
+    """获取所有待处理行（F列为空的行），带缓存"""
+    import time
+    now = time.time()
+    if _pending_row_cache["data"] is not None and (now - _pending_row_cache["timestamp"]) < _PENDING_ROW_CACHE_TTL:
+        return _pending_row_cache["data"]
+
+    pending = {}  # model -> row_index
+    batch_size = 200
+    for offset in range(0, 2000, batch_size):
+        start = offset + 1
+        end = offset + batch_size
+        range_str = f"A{start}:F{end}"
+        grid_data = read_sheet_range(SHEET_ID, range_str)
+        rows = grid_data.get("rows", [])
+
+        for i in range(len(rows)):
+            row = rows[i]
+            actual_row = start + i
+            if actual_row < 3:
+                continue
+            values = row.get("values", [])
+            row_data = [parse_cell_value(v.get("cellValue")) for v in values]
+            a_val = row_data[0] if len(row_data) > 0 else ""
+            f_val = row_data[5] if len(row_data) > 5 else ""
+            if a_val and not f_val.strip():
+                # 如果同一型号有多行待处理，取最后一行
+                pending[a_val] = actual_row
+
+        if len(rows) < batch_size:
+            break
+
+    _pending_row_cache["data"] = pending
+    _pending_row_cache["timestamp"] = now
+    return pending
+
+
 @app.route('/api/calculate-date', methods=['POST'])
 @require_auth
 def calculate_date():
-    """计算可发货日期：只计算不写入，速度最快。写入由create_order处理。"""
+    """计算可发货日期：只计算不写入，带缓存加速"""
     try:
         data = request.json
         model = data.get('model', '')
@@ -330,46 +375,33 @@ def calculate_date():
         expected_date = data.get('expected_date', '')
         pending_row_index = data.get('pending_row_index', 0)
 
-        # 1. 使用本地计算引擎计算可发货日期（核心操作，约800ms）
-        calculated_date, error_msg = calculate_delivery_date(model, tonnage, expected_date)
+        # 1. 检查计算结果缓存
+        import time
+        now = time.time()
+        cache_key = f"{model}:{tonnage}:{expected_date}"
+        if (_calc_result_cache["key"] == cache_key and
+            (now - _calc_result_cache["timestamp"]) < _CALC_CACHE_TTL):
+            calculated_date = _calc_result_cache["result"]
+        else:
+            # 使用本地计算引擎计算可发货日期
+            calculated_date, error_msg = calculate_delivery_date(model, tonnage, expected_date)
+            _calc_result_cache["key"] = cache_key
+            _calc_result_cache["result"] = calculated_date
+            _calc_result_cache["timestamp"] = now
 
-        # 2. 查找是否已有该型号的待处理行（只查找，不写入）
+        # 2. 查找是否已有该型号的待处理行（使用缓存）
         target_row = 0
         if pending_row_index > 0:
-            # 前端已传来行号，直接复用
             target_row = pending_row_index
         else:
-            # 按型号查找未提交的待处理行（F列为空表示未提交）
-            batch_size = 50
-            for offset in range(0, 200, batch_size):
-                start = offset + 1
-                end = offset + batch_size
-                range_str = f"A{start}:F{end}"
-                grid_data = read_sheet_range(SHEET_ID, range_str)
-                rows = grid_data.get("rows", [])
-
-                for i in range(len(rows)):
-                    row = rows[i]
-                    actual_row = start + i
-                    if actual_row < 3:
-                        continue
-                    values = row.get("values", [])
-                    row_data = [parse_cell_value(v.get("cellValue")) for v in values]
-                    a_val = row_data[0] if len(row_data) > 0 else ""
-                    f_val = row_data[5] if len(row_data) > 5 else ""
-                    if a_val == model and not f_val.strip():
-                        target_row = actual_row
-                        break
-
-                if target_row > 0:
-                    break
-                if len(rows) < batch_size:
-                    break
+            pending = _get_pending_rows()
+            if model in pending:
+                target_row = pending[model]
 
         return jsonify({
             "success": True,
             "calculated_date": calculated_date,
-            "row_index": target_row  # 0表示需要新建行，>0表示复用已有行
+            "row_index": target_row
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
