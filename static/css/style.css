@@ -712,10 +712,10 @@ body {
     #listTab .filter-bar {
         display: grid;
         grid-template-columns: repeat(6, 1fr);
-        gap: 0;
+        gap: 8px;
         margin-bottom: 16px;
-        border-top: 1px solid #dfe3ea;
-        border-left: 1px solid #dfe3ea;
+        padding: 0 20px;
+        border: none;
         background: #fff;
     }
 
@@ -729,17 +729,20 @@ body {
     #listTab .filter-bar select {
         width: 100%;
         min-width: 0;
-        height: 40px;
-        padding: 0 8px;
-        border: none;
-        border-right: 1px solid #dfe3ea;
-        border-bottom: 1px solid #dfe3ea;
-        border-radius: 0;
+        height: 38px;
+        padding: 0 10px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
         background-color: #fff;
-        color: #333;
-        font-size: 16px;
+        color: #667eea;
+        font-size: 14px;
         text-align: center;
         box-shadow: none;
+    }
+
+    #listTab .filter-bar input,
+    #listTab .filter-bar select {
+        color: #333;
     }
 
     #listTab #adminFilter button {
@@ -770,8 +773,8 @@ body {
     }
 
     #listTab #adminFilter button.active {
-        background: #fff;
-        color: #333;
+        background: #667eea;
+        color: #fff;
         font-weight: 600;
     }
 
