@@ -4,13 +4,11 @@ import requests
 import json
 import os
 import base64
-import hashlib
 from datetime import datetime, timezone, timedelta
 import functools
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from cryptography.fernet import Fernet
 from calc_engine import MODEL_CONFIG, calculate_delivery_date
 
 app = Flask(__name__)
@@ -37,13 +35,10 @@ HTTP = requests.Session()
 # 访问密码
 ACCESS_PASSWORD = os.environ.get('ACCESS_PASSWORD', 'queue2025')
 ADMIN_EMPLOYEE_ID = "20150465"
-ADMIN_KEYS = ["TENCENT_ACCESS_TOKEN", "RENDER_API_KEY", "CLOUDFLARE_API_TOKEN"]
-ADMIN_SECRET_PREFIX = "admin_secret:"
-CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
-ADMIN_KV_NAMESPACE_ID = os.environ.get("ADMIN_KV_NAMESPACE_ID", "")
-ADMIN_SECRET_KEY = os.environ.get("ADMIN_SECRET_KEY", "")
-CLOUDFLARE_API_TOKEN_BOOTSTRAP = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+ADMIN_KEYS = ["TENCENT_ACCESS_TOKEN", "RENDER_API_KEY", "GITHUB_TOKEN"]
 RENDER_API_KEY_BOOTSTRAP = os.environ.get("RENDER_API_KEY", "")
+RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "srv-d8l6eet7vvec73evlu7g")
+GITHUB_TOKEN_BOOTSTRAP = os.environ.get("GITHUB_TOKEN", "")
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 USER_CACHE_TTL = 120
@@ -52,7 +47,6 @@ MODEL_CACHE_TTL = 300
 _users_cache = {"data": None, "timestamp": 0}
 _models_cache = {"data": None, "timestamp": 0}
 _admin_secret_cache = {"data": {}, "timestamp": 0}
-ADMIN_SECRET_CACHE_TTL = 30
 
 
 def get_beijing_time_str():
@@ -86,32 +80,9 @@ def decode_token_expiry(token):
         return 0
 
 
-def _admin_fernet():
-    if not ADMIN_SECRET_KEY:
-        return None
-    key = base64.urlsafe_b64encode(hashlib.sha256(ADMIN_SECRET_KEY.encode()).digest())
-    return Fernet(key)
-
-
-def _kv_url(name):
-    return (
-        f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}"
-        f"/storage/kv/namespaces/{ADMIN_KV_NAMESPACE_ID}/values/{ADMIN_SECRET_PREFIX}{name}"
-    )
-
-
-def _kv_token():
-    # 读取 KV 必须先有一个引导 token；更新 Cloudflare Token 后仍以环境变量引导读写 KV。
-    return CLOUDFLARE_API_TOKEN_BOOTSTRAP
-
-
 def get_admin_secret(name):
-    """从 Cloudflare KV 读取加密密钥；失败时回退到 Render 环境变量，确保主服务不断。"""
-    now = time.time()
-    if (
-        name in _admin_secret_cache["data"]
-        and (now - _admin_secret_cache["timestamp"]) < ADMIN_SECRET_CACHE_TTL
-    ):
+    """从当前实例缓存或 Render 环境变量读取管理员凭证。"""
+    if name in _admin_secret_cache["data"]:
         return _admin_secret_cache["data"][name]
 
     fallback = os.environ.get(name, "")
@@ -119,47 +90,46 @@ def get_admin_secret(name):
         fallback = ACCESS_TOKEN
     elif name == "RENDER_API_KEY" and not fallback:
         fallback = RENDER_API_KEY_BOOTSTRAP
-    elif name == "CLOUDFLARE_API_TOKEN" and not fallback:
-        fallback = CLOUDFLARE_API_TOKEN_BOOTSTRAP
-
-    if not (CLOUDFLARE_ACCOUNT_ID and ADMIN_KV_NAMESPACE_ID and _kv_token() and _admin_fernet()):
-        return fallback
-
-    try:
-        resp = HTTP.get(_kv_url(name), headers={"Authorization": f"Bearer {_kv_token()}"}, timeout=10)
-        if resp.status_code == 404:
-            value = fallback
-        elif resp.status_code == 200 and resp.text:
-            value = _admin_fernet().decrypt(resp.text.encode()).decode()
-        else:
-            value = fallback
-    except Exception:
-        value = fallback
-
-    _admin_secret_cache["data"][name] = value
-    _admin_secret_cache["timestamp"] = now
-    return value
+    elif name == "GITHUB_TOKEN" and not fallback:
+        fallback = GITHUB_TOKEN_BOOTSTRAP
+    return fallback
 
 
 def set_admin_secret(name, value):
-    """把密钥加密后写入 Cloudflare KV。"""
-    if not (CLOUDFLARE_ACCOUNT_ID and ADMIN_KV_NAMESPACE_ID and _kv_token() and _admin_fernet()):
-        raise RuntimeError("主服务尚未配置 ADMIN_KV_NAMESPACE_ID / ADMIN_SECRET_KEY / CLOUDFLARE_API_TOKEN")
-    encrypted = _admin_fernet().encrypt(str(value).encode()).decode()
+    """把管理员凭证写入当前主服务的 Render 环境变量，并更新当前实例缓存。"""
+    render_key = get_admin_secret("RENDER_API_KEY") or RENDER_API_KEY_BOOTSTRAP
+    if not render_key:
+        raise RuntimeError("主服务尚未配置 RENDER_API_KEY，无法写入 Render 环境变量")
+    if not RENDER_SERVICE_ID:
+        raise RuntimeError("主服务尚未配置 RENDER_SERVICE_ID，无法定位 Render 服务")
+
     resp = HTTP.put(
-        _kv_url(name),
-        headers={"Authorization": f"Bearer {_kv_token()}", "Content-Type": "text/plain"},
-        data=encrypted,
+        f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars/{name}",
+        headers={
+            "Authorization": f"Bearer {render_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        json={"value": str(value)},
         timeout=15,
     )
-    try:
-        data = resp.json()
-    except Exception:
-        data = {}
-    if resp.status_code not in (200, 201) or data.get("success") is False:
-        raise RuntimeError(f"写入加密存储失败 {resp.status_code}: {str(data)[:200]}")
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(f"写入 Render 环境变量失败 {resp.status_code}: {resp.text[:200]}")
+
     _admin_secret_cache["data"][name] = str(value)
-    _admin_secret_cache["timestamp"] = time.time()
+
+    deploy_resp = HTTP.post(
+        f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/deploys",
+        headers={
+            "Authorization": f"Bearer {render_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        json={"clearCache": "do_not_clear"},
+        timeout=15,
+    )
+    if deploy_resp.status_code not in (200, 201, 409):
+        raise RuntimeError(f"已写入环境变量，但触发 Render 部署失败 {deploy_resp.status_code}: {deploy_resp.text[:200]}")
 
 
 @app.after_request
@@ -1313,19 +1283,22 @@ def validate_render_key(token):
         return False, f"Render 接口异常: {e}"
 
 
-def validate_cloudflare_token(token):
+def validate_github_token(token):
     try:
         resp = HTTP.get(
-            "https://api.cloudflare.com/client/v4/user/tokens/verify",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            "https://api.github.com/user",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
             timeout=20,
         )
-        data = resp.json() if resp.text else {}
-        if resp.status_code == 200 and data.get("success"):
+        if resp.status_code == 200:
             return True, ""
-        return False, f"Cloudflare {resp.status_code}: {json.dumps(data.get('errors') or data, ensure_ascii=False)[:160]}"
+        return False, f"GitHub {resp.status_code}: {resp.text[:160]}"
     except Exception as e:
-        return False, f"Cloudflare 接口异常: {e}"
+        return False, f"GitHub 接口异常: {e}"
 
 
 def validate_admin_key(key, value):
@@ -1333,8 +1306,8 @@ def validate_admin_key(key, value):
         return validate_tencent_token(value)
     if key == "RENDER_API_KEY":
         return validate_render_key(value)
-    if key == "CLOUDFLARE_API_TOKEN":
-        return validate_cloudflare_token(value)
+    if key == "GITHUB_TOKEN":
+        return validate_github_token(value)
     return False, "未知配置项"
 
 
@@ -1390,8 +1363,8 @@ def admin_update():
     return jsonify({
         "success": True,
         "effective": True,
-        "storage": "encrypted_kv",
-        "message": "已加密保存，立即生效，无需重新部署",
+        "storage": "render_env",
+        "message": "已写入 Render 环境变量，当前实例已临时生效，并已触发重新部署",
         "log": log_entry
     })
 
@@ -1420,11 +1393,11 @@ def admin_health():
         if not ok:
             issues.append({"key": "RENDER_API_KEY", "level": "error", "message": err})
 
-    cf_key = get_admin_secret("CLOUDFLARE_API_TOKEN")
-    if cf_key:
-        ok, err = validate_cloudflare_token(cf_key)
+    github_key = get_admin_secret("GITHUB_TOKEN")
+    if github_key:
+        ok, err = validate_github_token(github_key)
         if not ok:
-            issues.append({"key": "CLOUDFLARE_API_TOKEN", "level": "error", "message": err})
+            issues.append({"key": "GITHUB_TOKEN", "level": "error", "message": err})
 
     return jsonify({"success": True, "healthy": len(issues) == 0, "issues": issues})
 

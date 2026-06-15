@@ -21,7 +21,7 @@ const ADMIN_EMPLOYEE_ID = '20150465';
 const ADMIN_KEY_LABELS = {
     TENCENT_ACCESS_TOKEN: '腾讯 access_token',
     RENDER_API_KEY: 'Render API Key',
-    CLOUDFLARE_API_TOKEN: 'Cloudflare API Token'
+    GITHUB_TOKEN: 'GitHub Token'
 };
 
 // 从localStorage读取密码、员工ID和用户名
@@ -1263,7 +1263,7 @@ function renderAdminItems(items) {
             <div class="admin-item-row">
                 <input type="password" autocomplete="new-password" placeholder="粘贴新的 ${label}，输入不会回显" data-key="${item.name}" />
                 <button type="button" class="admin-btn-validate" data-action="validate">校验</button>
-                <button type="button" class="admin-btn-update" data-action="update">加密保存</button>
+                <button type="button" class="admin-btn-update" data-action="update">保存并部署</button>
             </div>
             <div class="admin-item-msg" data-msg></div>
         `;
@@ -1293,7 +1293,7 @@ async function onAdminValidate(key, input, msg) {
         const data = await r.json();
         if (data.success) {
             msg.className = 'admin-item-msg ok';
-            msg.textContent = '校验通过，可加密保存';
+            msg.textContent = '校验通过，可保存并部署';
         } else {
             msg.className = 'admin-item-msg err';
             msg.textContent = '校验失败：' + (data.error || '未知错误');
@@ -1311,9 +1311,9 @@ async function onAdminUpdate(key, input, msg) {
         msg.textContent = '请先粘贴新的值';
         return;
     }
-    if (!confirm(`确认更新「${ADMIN_KEY_LABELS[key] || key}」？\n将写入后端加密存储，立即生效。`)) return;
+    if (!confirm(`确认更新「${ADMIN_KEY_LABELS[key] || key}」？\n将写入主服务 Render 环境变量，并触发重新部署。`)) return;
     msg.className = 'admin-item-msg';
-    msg.textContent = '正在校验并加密保存…';
+    msg.textContent = '正在校验、保存并触发部署…';
     try {
         const r = await apiFetch(`${API_BASE}/api/admin/update`, {
             method: 'POST',
@@ -1328,7 +1328,7 @@ async function onAdminUpdate(key, input, msg) {
             const log = document.getElementById('adminLog');
             const item = document.createElement('div');
             const t = new Date().toLocaleString();
-            item.textContent = `[${t}] ${ADMIN_KEY_LABELS[key] || key} 已更新（${data.log ? data.log.masked : ''}），已加密保存并立即生效`;
+            item.textContent = `[${t}] ${ADMIN_KEY_LABELS[key] || key} 已更新（${data.log ? data.log.masked : ''}），已写入 Render 环境变量并触发部署`;
             log.prepend(item);
             setTimeout(loadAdminStatus, 2000);
         } else {
