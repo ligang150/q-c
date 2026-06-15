@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>销售排队系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=32">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=33">
 </head>
 <body>
     <div id="authOverlay" class="auth-overlay" style="display:none;">
@@ -34,9 +34,9 @@
         </header>
 
         <nav class="nav-tabs">
-            <button class="tab-btn active" onclick="showTab('create')">订单排队</button>
-            <button class="tab-btn" onclick="showTab('list')">排队明细</button>
-            <button class="tab-btn" onclick="showTab('feedback')">问题反馈</button>
+            <button class="tab-btn active" onclick="showTab('create', event)">订单排队</button>
+            <button class="tab-btn" onclick="showTab('list', event)">排队明细</button>
+            <button class="tab-btn" onclick="showTab('feedback', event)">问题反馈</button>
         </nav>
 
         <div id="createTab" class="tab-content active">
@@ -199,6 +199,6 @@
 
     <div id="toast" class="toast"></div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=32"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=33"></script>
 </body>
 </html>

@@ -499,6 +499,7 @@ body {
 }
 
 .btn-edit,
+.btn-copy,
 .btn-delete {
     padding: 5px 12px;
     border: none;
@@ -514,12 +515,18 @@ body {
     color: white;
 }
 
+.btn-copy {
+    background: linear-gradient(135deg, #18a058, #35b872);
+    color: white;
+}
+
 .btn-delete {
     background: linear-gradient(135deg, var(--danger), #d83b2f);
     color: white;
 }
 
 .btn-edit:active,
+.btn-copy:active,
 .btn-delete:active {
     transform: scale(0.95);
     opacity: 0.8;
@@ -839,6 +846,7 @@ body {
     }
     
     .btn-edit,
+    .btn-copy,
     .btn-delete {
         padding: 4px 8px;
         font-size: 11px;

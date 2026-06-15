@@ -621,6 +621,7 @@ function renderOrders(orders) {
             <td>${queueDateDisplay}</td>
             <td class="td-actions">
                 <button class="btn-edit" onclick="openEditModal(${order.row_index})">改</button>
+                <button class="btn-copy" onclick="copyOrder(${order.row_index})">复</button>
                 <button class="btn-delete" onclick="deleteOrder(${order.row_index})">删</button>
             </td>
         </tr>`;
@@ -736,6 +737,39 @@ async function openEditModal(rowIndex) {
         }
     } catch (error) {
         showToast('加载失败', 'error');
+    }
+}
+
+async function copyOrder(rowIndex) {
+    try {
+        const submitterNameParam = `&submitter_name=${encodeURIComponent(currentUser.name || '')}`;
+        const response = await apiFetch(`${API_BASE}/api/orders/${rowIndex}?submitter_id=${encodeURIComponent(currentUser.id || '')}${submitterNameParam}`);
+        const data = await response.json();
+        if (!data.success || !data.order) {
+            showToast('复制失败: ' + (data.error || '订单不存在'), 'error');
+            return;
+        }
+
+        const order = data.order;
+        showTab('create');
+        pendingRowIndex = 0;
+        draftQueue = null;
+
+        document.getElementById('model').value = order.model || '';
+        document.getElementById('tonnage').value = order.tonnage || '';
+        document.getElementById('customer').value = order.customer || '';
+        document.getElementById('expectedDate').value = order.expected_date || '';
+        document.getElementById('calculatedDate').value = '';
+        document.getElementById('queueDate').value = '';
+
+        ['model', 'tonnage', 'customer', 'expectedDate'].forEach(fieldId => {
+            document.getElementById(fieldId).dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        showToast('已复制订单内容，请确认后提交新排队', 'success');
+        setTimeout(() => calculateDate(), 0);
+    } catch (error) {
+        showToast('网络错误，复制失败', 'error');
     }
 }
 
@@ -1073,9 +1107,10 @@ async function deleteOrder(rowIndex) {
     }
 }
 
-function showTab(tabName) {
+function showTab(tabName, evt) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
+    const activeBtn = evt?.target || document.querySelector(`.tab-btn[onclick*="showTab('${tabName}')"]`);
+    if (activeBtn) activeBtn.classList.add('active');
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     document.getElementById(tabName + 'Tab').classList.add('active');
     if (tabName === 'list') loadOrders(1, ordersDirty || allOrders.length === 0);
