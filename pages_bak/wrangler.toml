@@ -1,0 +1,5 @@
+name = "qb"
+compatibility_date = "2026-06-12"
+
+[vars]
+ACCESS_PASSWORD = "queue2025"

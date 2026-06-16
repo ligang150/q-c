@@ -104,6 +104,12 @@ def sync_tencent_token_to_cloudflare(token_value):
     if not cf_token:
         return False, "CF_API_TOKEN 未配置"
 
+    import subprocess
+
+    pages_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pages_bak")
+    if not os.path.isdir(pages_dir):
+        return False, f"pages_bak 目录不存在: {pages_dir}"
+
     try:
         resp = HTTP.patch(
             f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/pages/projects/{CF_PAGES_PROJECT}",
@@ -126,9 +132,26 @@ def sync_tencent_token_to_cloudflare(token_value):
             timeout=20,
         )
         data = resp.json()
-        if resp.status_code == 200 and data.get("success"):
-            return True, ""
-        return False, f"CF API {resp.status_code}: {resp.text[:200]}"
+        if not (resp.status_code == 200 and data.get("success")):
+            return False, f"CF API 更新 env var 失败 {resp.status_code}: {resp.text[:200]}"
+
+        env = os.environ.copy()
+        env["CLOUDFLARE_API_TOKEN"] = cf_token
+        env["CLOUDFLARE_ACCOUNT_ID"] = CF_ACCOUNT_ID
+
+        result = subprocess.run(
+            ["npx", "wrangler", "pages", "deploy", pages_dir,
+             "--project-name", CF_PAGES_PROJECT,
+             "--branch", "main",
+             "--commit-dirty=true"],
+            capture_output=True, text=True, timeout=120, cwd=pages_dir, env=env
+        )
+        if result.returncode != 0:
+            return False, f"wrangler deploy 失败: {result.stderr[:300]}"
+
+        return True, ""
+    except subprocess.TimeoutExpired:
+        return False, "wrangler deploy 超时"
     except Exception as e:
         return False, f"CF 同步异常: {e}"
 
