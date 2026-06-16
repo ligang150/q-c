@@ -40,6 +40,10 @@ RENDER_API_KEY_BOOTSTRAP = os.environ.get("RENDER_API_KEY", "")
 RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "srv-d8l6eet7vvec73evlu7g")
 GITHUB_TOKEN_BOOTSTRAP = os.environ.get("GITHUB_TOKEN", "")
 
+CF_API_TOKEN = os.environ.get("CF_API_TOKEN", "")
+CF_ACCOUNT_ID = os.environ.get("CF_ACCOUNT_ID", "fc1689bb6c323ffbb8c2a2b5b469b560")
+CF_PAGES_PROJECT = os.environ.get("CF_PAGES_PROJECT", "qb2")
+
 BEIJING_TZ = timezone(timedelta(hours=8))
 USER_CACHE_TTL = 120
 MODEL_CACHE_TTL = 300
@@ -95,6 +99,40 @@ def get_admin_secret(name):
     return fallback
 
 
+def sync_tencent_token_to_cloudflare(token_value):
+    cf_token = CF_API_TOKEN
+    if not cf_token:
+        return False, "CF_API_TOKEN 未配置"
+
+    try:
+        resp = HTTP.patch(
+            f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/pages/projects/{CF_PAGES_PROJECT}",
+            headers={
+                "Authorization": f"Bearer {cf_token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "deployment_configs": {
+                    "production": {
+                        "env_vars": {
+                            "TENCENT_ACCESS_TOKEN": {
+                                "type": "secret_text",
+                                "value": token_value,
+                            }
+                        }
+                    }
+                }
+            },
+            timeout=20,
+        )
+        data = resp.json()
+        if resp.status_code == 200 and data.get("success"):
+            return True, ""
+        return False, f"CF API {resp.status_code}: {resp.text[:200]}"
+    except Exception as e:
+        return False, f"CF 同步异常: {e}"
+
+
 def set_admin_secret(name, value):
     """把管理员凭证写入当前主服务的 Render 环境变量，并更新当前实例缓存。"""
     render_key = get_admin_secret("RENDER_API_KEY") or RENDER_API_KEY_BOOTSTRAP
@@ -130,6 +168,11 @@ def set_admin_secret(name, value):
     )
     if deploy_resp.status_code not in (200, 201, 409):
         raise RuntimeError(f"已写入环境变量，但触发 Render 部署失败 {deploy_resp.status_code}: {deploy_resp.text[:200]}")
+
+    if name == "TENCENT_ACCESS_TOKEN":
+        cf_ok, cf_err = sync_tencent_token_to_cloudflare(str(value))
+        if not cf_ok:
+            raise RuntimeError(f"已写入 Render，但同步 Cloudflare 失败：{cf_err}")
 
 
 @app.after_request
@@ -1363,8 +1406,8 @@ def admin_update():
     return jsonify({
         "success": True,
         "effective": True,
-        "storage": "render_env",
-        "message": "已写入 Render 环境变量，当前实例已临时生效，并已触发重新部署",
+        "storage": "render_env" if key != "TENCENT_ACCESS_TOKEN" else "render_env+cloudflare_pages",
+        "message": "已写入 Render 环境变量并同步 Cloudflare Pages，当前实例已临时生效，并已触发重新部署" if key == "TENCENT_ACCESS_TOKEN" else "已写入 Render 环境变量，当前实例已临时生效，并已触发重新部署",
         "log": log_entry
     })
 
