@@ -1445,6 +1445,14 @@ def admin_health():
     return jsonify({"success": True, "healthy": len(issues) == 0, "issues": issues})
 
 
+@app.route('/api/sync/token', methods=['GET'])
+@require_auth
+def sync_token():
+    """供备用服务(Cloudflare Pages)拉取当前 TENCENT_ACCESS_TOKEN"""
+    token = get_admin_secret("TENCENT_ACCESS_TOKEN") or ACCESS_TOKEN
+    return jsonify({"success": True, "access_token": token})
+
+
 @app.route('/api/test-connection', methods=['GET'])
 @require_auth
 def test_connection():
