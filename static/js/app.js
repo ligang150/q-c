@@ -184,6 +184,7 @@ function initApp() {
     document.getElementById('changePwdBtn').style.display = 'inline-block';
     document.getElementById('logoutBtn').style.display = 'inline-block';
     loadModels();
+    setupModelSearch();
     // 先清空所有字段（在绑定事件之前，避免触发计算）
     document.getElementById('model').value = '';
     document.getElementById('tonnage').value = '';
@@ -280,6 +281,46 @@ function populateModelSelect(selectId, models) {
         option.value = model;
         option.textContent = model;
         select.appendChild(option);
+    });
+}
+
+// 型号搜索筛选功能
+function setupModelSearch() {
+    const searchInput = document.getElementById('modelSearch');
+    const modelSelect = document.getElementById('model');
+    if (!searchInput || !modelSelect) return;
+
+    searchInput.addEventListener('input', function() {
+        const keyword = this.value.trim().toLowerCase();
+        const currentVal = modelSelect.value;
+        
+        // 清空选项
+        modelSelect.innerHTML = '<option value="">请选择型号</option>';
+        
+        // 筛选匹配的型号
+        const filtered = modelOptions.filter(model => 
+            model.toLowerCase().includes(keyword)
+        );
+        
+        if (filtered.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = '无匹配型号';
+            option.disabled = true;
+            modelSelect.appendChild(option);
+        } else {
+            filtered.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+            });
+        }
+        
+        // 如果当前选中的值仍在筛选结果中，保持选中
+        if (currentVal && filtered.includes(currentVal)) {
+            modelSelect.value = currentVal;
+        }
     });
 }
 
