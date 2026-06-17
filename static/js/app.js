@@ -58,6 +58,8 @@ function clearOrderForm() {
     if (form) form.reset();
     const model = document.getElementById('model');
     if (model) model.value = '';
+    const modelInput = document.getElementById('modelInput');
+    if (modelInput) modelInput.value = '';
     const tonnage = document.getElementById('tonnage');
     if (tonnage) tonnage.value = '';
     const customer = document.getElementById('customer');
@@ -187,6 +189,8 @@ function initApp() {
     setupModelSearch();
     // 先清空所有字段（在绑定事件之前，避免触发计算）
     document.getElementById('model').value = '';
+    const modelInput = document.getElementById('modelInput');
+    if (modelInput) modelInput.value = '';
     document.getElementById('tonnage').value = '';
     document.getElementById('customer').value = '';
     document.getElementById('calculatedDate').value = '';
@@ -274,7 +278,9 @@ function cacheModels(models) {
 }
 
 function populateModelSelect(selectId, models) {
+    // 兼容：排队明细筛选下拉仍用原生select
     const select = document.getElementById(selectId);
+    if (!select) return;
     select.innerHTML = '<option value="">请选择型号</option>';
     models.forEach(model => {
         const option = document.createElement('option');
@@ -282,46 +288,139 @@ function populateModelSelect(selectId, models) {
         option.textContent = model;
         select.appendChild(option);
     });
+    // 如果是主表单的model，同步到combobox
+    if (selectId === 'model') {
+        initModelCombobox(models);
+    }
 }
 
-// 型号搜索筛选功能
-function setupModelSearch() {
-    const searchInput = document.getElementById('modelSearch');
-    const modelSelect = document.getElementById('model');
-    if (!searchInput || !modelSelect) return;
+// ============ 型号可搜索下拉框 (combobox) ============
+let comboboxModels = [];
+let comboboxHighlightIndex = -1;
 
-    searchInput.addEventListener('input', function() {
+function initModelCombobox(models) {
+    comboboxModels = models;
+    const input = document.getElementById('modelInput');
+    const hidden = document.getElementById('model');
+    if (!input || !hidden) return;
+    // 如果已有选中值（如复制订单），回填到输入框
+    if (hidden.value && models.includes(hidden.value)) {
+        input.value = hidden.value;
+    }
+}
+
+function setupModelSearch() {
+    const input = document.getElementById('modelInput');
+    const hidden = document.getElementById('model');
+    const dropdown = document.getElementById('modelDropdown');
+    const combobox = document.getElementById('modelCombobox');
+    if (!input || !hidden || !dropdown || !combobox) return;
+
+    // 聚焦时展开下拉
+    input.addEventListener('focus', function() {
+        filterAndShowDropdown(this.value);
+    });
+
+    // 输入时实时筛选
+    input.addEventListener('input', function() {
         const keyword = this.value.trim().toLowerCase();
-        const currentVal = modelSelect.value;
-        
-        // 清空选项
-        modelSelect.innerHTML = '<option value="">请选择型号</option>';
-        
-        // 筛选匹配的型号
-        const filtered = modelOptions.filter(model => 
-            model.toLowerCase().includes(keyword)
-        );
-        
-        if (filtered.length === 0) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = '无匹配型号';
-            option.disabled = true;
-            modelSelect.appendChild(option);
-        } else {
-            filtered.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model;
-                option.textContent = model;
-                modelSelect.appendChild(option);
-            });
+        // 清除hidden值（用户正在编辑，之前的选择可能无效）
+        hidden.value = '';
+        filterAndShowDropdown(this.value);
+    });
+
+    // 键盘导航
+    input.addEventListener('keydown', function(e) {
+        const items = dropdown.querySelectorAll('li:not(.empty-msg)');
+        if (!dropdown.classList.contains('show') || items.length === 0) {
+            if (e.key === 'ArrowDown' || e.key === 'Enter') {
+                filterAndShowDropdown(this.value);
+                e.preventDefault();
+            }
+            return;
         }
-        
-        // 如果当前选中的值仍在筛选结果中，保持选中
-        if (currentVal && filtered.includes(currentVal)) {
-            modelSelect.value = currentVal;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            comboboxHighlightIndex = Math.min(comboboxHighlightIndex + 1, items.length - 1);
+            updateHighlight(items);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            comboboxHighlightIndex = Math.max(comboboxHighlightIndex - 1, 0);
+            updateHighlight(items);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (comboboxHighlightIndex >= 0 && items[comboboxHighlightIndex]) {
+                selectModel(items[comboboxHighlightIndex].textContent);
+            }
+        } else if (e.key === 'Escape') {
+            closeDropdown();
         }
     });
+
+    // 点击下拉选项
+    dropdown.addEventListener('click', function(e) {
+        const li = e.target.closest('li:not(.empty-msg)');
+        if (li) {
+            selectModel(li.textContent);
+        }
+    });
+
+    // 点击外部关闭
+    document.addEventListener('click', function(e) {
+        if (!combobox.contains(e.target)) {
+            closeDropdown();
+        }
+    });
+
+    function filterAndShowDropdown(keyword) {
+        const kw = (keyword || '').trim().toLowerCase();
+        const filtered = kw
+            ? comboboxModels.filter(m => m.toLowerCase().includes(kw))
+            : comboboxModels;
+
+        dropdown.innerHTML = '';
+        comboboxHighlightIndex = -1;
+
+        if (filtered.length === 0) {
+            const li = document.createElement('li');
+            li.className = 'empty-msg';
+            li.textContent = '无匹配型号';
+            dropdown.appendChild(li);
+        } else {
+            filtered.forEach(model => {
+                const li = document.createElement('li');
+                li.textContent = model;
+                dropdown.appendChild(li);
+            });
+        }
+
+        combobox.classList.add('open');
+        dropdown.classList.add('show');
+    }
+
+    function selectModel(modelName) {
+        input.value = modelName;
+        hidden.value = modelName;
+        closeDropdown();
+        // 触发change事件（用于自动计算等）
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function closeDropdown() {
+        combobox.classList.remove('open');
+        dropdown.classList.remove('show');
+        comboboxHighlightIndex = -1;
+    }
+
+    function updateHighlight(items) {
+        items.forEach((item, i) => {
+            item.classList.toggle('highlighted', i === comboboxHighlightIndex);
+        });
+        if (items[comboboxHighlightIndex]) {
+            items[comboboxHighlightIndex].scrollIntoView({ block: 'nearest' });
+        }
+    }
 }
 
 function setupEventListeners() {
@@ -340,6 +439,12 @@ function setupEventListeners() {
             field.addEventListener('change', saveDraft);
         }
     });
+    // combobox输入框也记录草稿
+    const draftModelInput = document.getElementById('modelInput');
+    if (draftModelInput) {
+        draftModelInput.addEventListener('input', saveDraft);
+        draftModelInput.addEventListener('change', saveDraft);
+    }
     // 日期选择器已改用自定义组件（showDatePicker函数），无需自动关闭逻辑
     // 监听用户操作，记录活动时间
     ['click', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
@@ -353,6 +458,11 @@ function setupEventListeners() {
             field.addEventListener('change', debounce(calculateDate, 500));
         }
     });
+    // combobox输入框选中型号时也触发计算
+    const modelInput = document.getElementById('modelInput');
+    if (modelInput) {
+        modelInput.addEventListener('change', debounce(calculateDate, 500));
+    }
     // 修改页面自动计算
     const editCalcFields = ['editModel', 'editTonnage', 'editCustomer', 'editExpectedDate'];
     editCalcFields.forEach(fieldId => {
@@ -520,6 +630,10 @@ async function handleCreateOrder(e) {
             ordersDirty = true;
             allOrders = [];
             document.getElementById('orderForm').reset();
+            // 重置型号combobox
+            document.getElementById('model').value = '';
+            const mi = document.getElementById('modelInput');
+            if (mi) mi.value = '';
             // 重置为次日
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 1);
@@ -810,6 +924,8 @@ async function copyOrder(rowIndex) {
         draftQueue = null;
 
         document.getElementById('model').value = order.model || '';
+        const modelInput = document.getElementById('modelInput');
+        if (modelInput) modelInput.value = order.model || '';
         document.getElementById('tonnage').value = order.tonnage || '';
         document.getElementById('customer').value = order.customer || '';
         document.getElementById('expectedDate').value = order.expected_date || '';
