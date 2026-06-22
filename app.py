@@ -88,14 +88,40 @@ def decode_token_expiry(token):
         return 0
 
 
+def get_tencent_token_from_cloudflare_kv():
+    """从 Cloudflare KV 读取腾讯文档 token（备用服务使用）"""
+    cf_token = CF_API_TOKEN
+    if not cf_token:
+        return None
+    KV_NAMESPACE_ID = "bd2ec644ce1c49e2a4b563829e7359a8"
+    try:
+        resp = HTTP.get(
+            f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/storage/kv/namespaces/{KV_NAMESPACE_ID}/values/TENCENT_ACCESS_TOKEN",
+            headers={"Authorization": f"Bearer {cf_token}"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.text
+    except Exception:
+        pass
+    return None
+
+
 def get_admin_secret(name):
-    """从当前实例缓存或 Render 环境变量读取管理员凭证。"""
+    """从当前实例缓存或 Render 环境变量读取管理员凭证。
+    备用服务：TENCENT_ACCESS_TOKEN 优先从 Cloudflare KV 读取"""
     if name in _admin_secret_cache["data"]:
         return _admin_secret_cache["data"][name]
 
     fallback = os.environ.get(name, "")
-    if name == "TENCENT_ACCESS_TOKEN" and not fallback:
-        fallback = ACCESS_TOKEN
+    if name == "TENCENT_ACCESS_TOKEN":
+        if fallback:
+            return fallback
+        # 备用服务：从 Cloudflare KV 读取
+        kv_token = get_tencent_token_from_cloudflare_kv()
+        if kv_token:
+            return kv_token
+        return ACCESS_TOKEN
     elif name == "RENDER_API_KEY" and not fallback:
         fallback = RENDER_API_KEY_BOOTSTRAP
     elif name == "GITHUB_TOKEN" and not fallback:
